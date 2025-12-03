@@ -2519,24 +2519,46 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
     } else if (!split && src0->type == GGML_TYPE_F32 && src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32) {
         // Check if this is an attention operation that can use our optimized gfx906 kernel
         const int cc = ggml_cuda_info().devices[ctx.device].cc;
-        if (cc == GGML_CUDA_CC_VEGA20 && src0->ne[0] == 2880 && src1->ne[1] == 128 && src0->ne[1] == 2880) {
-            // Use custom gfx906 kernel for attention operations
-            // Operation: C = src0^T * src1 (matching cuBLAS CUBLAS_OP_T behavior)
-            GGML_TENSOR_BINARY_OP_LOCALS
+        // Check for gfx906 (Vega20): use range check like other gfx906 code
+        if (cc >= GGML_CUDA_CC_VEGA20 && cc < GGML_CUDA_CC_CDNA1) {
+            // Debug: log dimensions to see why condition might not match
+            static const bool log_performance = (getenv("GGML_HIP_LOG_PERFORMANCE") != nullptr);
+            if (log_performance) {
+                static int f32_check_count = 0;
+                static std::mutex f32_check_mutex;
+                std::lock_guard<std::mutex> lock(f32_check_mutex);
+                f32_check_count++;
+                if (f32_check_count <= 5) {
+                    fprintf(stderr, "gfx906 F32 kernel check[%d]: src0->ne[0]=%ld src0->ne[1]=%ld src1->ne[1]=%ld cc=0x%x\n",
+                        f32_check_count, (long)src0->ne[0], (long)src0->ne[1], (long)src1->ne[1], cc);
+                    fflush(stderr);
+                }
+            }
             
-            const float * A = (const float *) src0->data;
-            const float * B = (const float *) src1->data;
-            float * C = (float *) dst->data;
-            const int M = ne00;  // src0->ne[0] = 2880
-            const int N = ne11;  // src1->ne[1] = 128
-            const int K = ne01;  // src0->ne[1] = ne10 = 2880
-            // Strides: nb01 is stride between rows of src0, nb11 is stride between rows of src1
-            const int64_t stride_A = nb01 / sizeof(float); // stride for src0 (row stride in elements)
-            const int64_t stride_B = nb11 / sizeof(float); // stride for src1 (row stride in elements)
-            const int64_t stride_C = ne0;  // stride for dst (row length in elements)
-            
-            mul_mat_f32_gfx906(ctx.stream(), A, B, C, M, N, K, stride_A, stride_B, stride_C);
-            return;
+            if (src0->ne[0] == 2880 && src1->ne[1] == 128 && src0->ne[1] == 2880) {
+                // Use custom gfx906 kernel for attention operations
+                // Operation: C = src0^T * src1 (matching cuBLAS CUBLAS_OP_T behavior)
+                GGML_TENSOR_BINARY_OP_LOCALS
+                
+                const float * A = (const float *) src0->data;
+                const float * B = (const float *) src1->data;
+                float * C = (float *) dst->data;
+                const int M = ne00;  // src0->ne[0] = 2880
+                const int N = ne11;  // src1->ne[1] = 128
+                const int K = ne01;  // src0->ne[1] = ne10 = 2880
+                // Strides: nb01 is stride between rows of src0, nb11 is stride between rows of src1
+                const int64_t stride_A = nb01 / sizeof(float); // stride for src0 (row stride in elements)
+                const int64_t stride_B = nb11 / sizeof(float); // stride for src1 (row stride in elements)
+                const int64_t stride_C = ne0;  // stride for dst (row length in elements)
+                
+                if (log_performance) {
+                    fprintf(stderr, "gfx906 F32 kernel: Using custom mul_mat_f32_gfx906 (M=%d N=%d K=%d)\n", M, N, K);
+                    fflush(stderr);
+                }
+                
+                mul_mat_f32_gfx906(ctx.stream(), A, B, C, M, N, K, stride_A, stride_B, stride_C);
+                return;
+            }
         }
 #endif
     } else {
