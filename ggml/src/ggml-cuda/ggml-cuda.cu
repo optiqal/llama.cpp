@@ -240,8 +240,16 @@ static void ggml_cuda_print_capability_report(const ggml_cuda_device_info & info
     GGML_LOG_INFO("=== End Capability Report ===\n\n");
     
     // Initialize prefetching state from environment variable
+    // NOTE: Prefetching is disabled by default due to ~16% performance regression
+    // Enable via GGML_HIP_PREFETCH_ENABLE=1 (experimental, not recommended)
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
     const bool prefetch_enabled = ggml_cuda_prefetch_enabled();
+    if (prefetch_enabled) {
+        fprintf(stderr, "ggml_cuda: ⚠️  HBM2 prefetching enabled (experimental - causes ~16%% regression)\n");
+        fprintf(stderr, "ggml_cuda:    Benchmark: pp512 = 549.14 t/s (vs 652.58 t/s without prefetch)\n");
+        fprintf(stderr, "ggml_cuda:    Recommendation: Disable prefetching for better performance\n");
+        fflush(stderr);
+    }
     for (int id = 0; id < info.device_count; ++id) {
         ggml_cuda_set_device(id);
         ggml_cuda_set_prefetch_enabled(prefetch_enabled);

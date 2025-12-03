@@ -94,10 +94,26 @@ From benchmark logs:
 
 ### Prefetching Recommendations
 
+**Current Status: DISABLED BY DEFAULT** - Volatile load approach causes ~16% regression
+
 **For HBM2 (~300-400 cycle latency):**
 1. **Prefetch Distance**: Need to prefetch 2-3 iterations ahead to hide latency
    - Current: 1 iteration (nrows*nwarps)
    - Recommended: 2-3 iterations for better latency hiding
+   - **However**: Even with better distance, volatile load overhead remains problematic
+
+2. **Alternative Approaches** (not yet implemented):
+   - **Software Pipelining**: Load next iteration's data while computing current iteration
+     - No volatile loads, just regular loads scheduled ahead
+     - Requires restructuring kernel loops
+   - **Compiler Hints**: Use AMD-specific prefetch intrinsics if available
+     - May provide non-blocking prefetch behavior
+   - **Selective Prefetching**: Only prefetch for specific access patterns
+     - Prefetch only for scattered access patterns (high stride)
+     - Skip prefetching for coalesced patterns (already efficient)
+   - **Double Buffering**: Use two buffers and swap between them
+     - Load into one buffer while computing from the other
+     - More complex but avoids volatile load overhead
 
 2. **Prefetch Timing**: Prefetch should happen early in iteration
    - Current: Prefetch at start of iteration

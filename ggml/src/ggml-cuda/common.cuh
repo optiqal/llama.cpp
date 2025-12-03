@@ -348,28 +348,31 @@ static void ggml_cuda_set_prefetch_enabled(bool enabled) {
 }
 
 static __device__ __forceinline__ void ggml_cuda_prefetch_hbm2(const void * addr) {
-    // Only prefetch if enabled via runtime flag
-    // The volatile load has overhead, so we skip it when prefetching is disabled
-    // Using __constant__ memory for efficient access (cached, no global memory access)
+    // DISABLED BY DEFAULT: Volatile load approach causes ~16% performance regression
+    // Root cause: Volatile load blocks execution even when data is cached
+    // 
+    // Benchmark results (gpt-oss 120B MXFP4 MoE, 2x gfx906):
+    //   Without prefetch: pp512 = 652.58 ± 23.78 t/s
+    //   With prefetch:    pp512 = 549.14 ± 21.64 t/s (-15.8% regression)
+    //
+    // Alternative approaches to investigate:
+    //   1. Software pipelining (load next iteration while computing current)
+    //   2. Compiler hints (if AMD compiler supports non-blocking prefetch)
+    //   3. Better prefetch distance (2-3 iterations ahead instead of 1)
+    //   4. Selective prefetching (only for scattered access patterns)
+    //
+    // For now, prefetching is disabled by default. Enable via GGML_HIP_PREFETCH_ENABLE=1
+    // (experimental, not recommended due to regression)
+    
+    // Only prefetch if explicitly enabled via runtime flag
     if (!g_prefetch_enabled_device) {
         return; // Early return to avoid volatile load overhead
     }
     
-    // Software prefetching: Issue a controlled load to bring data into L2 cache
-    // Strategy: Load into a register that won't be used immediately, allowing
-    // the memory controller to prefetch into L2 cache while computation continues
-    // 
-    // HBM2 latency: ~300-400 cycles = ~167-222ns at 1.8GHz
-    // Prefetch distance: Load 1-2 iterations ahead to hide this latency
-    // 
-    // INVESTIGATION: Volatile load may cause overhead even when data is cached.
-    // Consider: Using __builtin_prefetch with proper locality hints, or
-    // implementing software pipelining instead of explicit prefetching.
+    // EXPERIMENTAL: Volatile load prefetching (causes regression, not recommended)
+    // The volatile load blocks execution even when data is cached, causing overhead
     volatile const char * prefetch_ptr = (volatile const char *)addr;
-    // Issue a read that brings data into cache but doesn't block computation
-    // Using volatile ensures the load isn't optimized away
-    // The load will trigger L2 cache fill, hiding HBM2 latency for subsequent access
-    (void)*prefetch_ptr; // Dummy read to trigger prefetch
+    (void)*prefetch_ptr; // Dummy read to trigger prefetch (blocks execution)
 }
 #else
 static __device__ __forceinline__ void ggml_cuda_prefetch_hbm2(const void * addr) {
