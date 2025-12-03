@@ -212,27 +212,46 @@ This document provides a comprehensive analysis of gfx906-specific optimizations
 
 ### High Priority (LLM-Specific)
 
-1. **DPP Instructions for Reductions** 🔄 MEDIUM PRIORITY
-   - Could optimize reduction operations in attention kernels
-   - Reduce shared memory pressure
+1. **DPP Instructions for Wavefront Reductions** 🔴 HIGH PRIORITY
+   - **Location:** `warp_reduce_sum()` in `common.cuh:404-423`
+   - **Usage:** Extensively called in MMQ, MMVF, reduce_rows, ssm-scan, mmid kernels
+   - **Current:** Uses `__shfl_xor_sync` for reductions
+   - **Opportunity:** Use `v_mov_b32_dpp` with row_shr pattern for 64-lane wavefronts
+   - **Benefits:** Lower latency, reduced shared memory pressure, better instruction throughput
    - **Impact:** 2-5% potential improvement in reduction-heavy kernels
+   - **See:** `VEGA_7NM_ISA_OPTIMIZATION_OPPORTUNITIES.md` for implementation details
 
-2. **Memory Prefetching Investigation** 🔄 MEDIUM PRIORITY
+2. **Memory Prefetching Investigation** 🟡 MEDIUM PRIORITY
    - Prefetching was disabled due to regression
    - Needs profiling to understand root cause
    - **Impact:** 3-7% potential improvement if fixed
+   - **See:** `VEGA_7NM_ISA_OPTIMIZATION_OPPORTUNITIES.md` for investigation strategy
 
 ### Medium Priority (Architecture-Specific)
 
-3. **Cache Hierarchy Optimization** 🔄 IN PROGRESS (Phase 2.4)
+3. **Cache-Aware Memory Access Patterns** 🟡 MEDIUM PRIORITY
+   - **Location:** `mmq.cuh` (memory access), `mul-mat-f32-gfx906.cuh` (tile loading)
+   - **Current:** Basic coalesced access, prefetching disabled
+   - **Opportunity:** Cache hints, prefetch distance optimization, streaming write hints
+   - **Impact:** 2-5% improvement for memory-bound operations
+   - **See:** `VEGA_7NM_ISA_OPTIMIZATION_OPPORTUNITIES.md` for specific optimizations
+
+4. **Cache Hierarchy Optimization** 🔄 IN PROGRESS (Phase 2.4)
    - L1/L2 cache hints
    - Cache-aware memory access patterns
    - **Impact:** 2-5% improvement for memory-bound operations
 
-4. **Advanced DPP Patterns** 📋 FUTURE
+5. **Advanced DPP Patterns** 📋 FUTURE
    - Cross-lane communication optimizations
    - Data shuffling without shared memory
    - **Impact:** 1-3% improvement in specific kernels
+
+6. **Instruction-Level Optimizations** 📋 FUTURE
+   - Vectorized load/store (`v_load_dwordx4`, `v_store_dwordx4`)
+   - FMA instruction scheduling optimization
+   - Conditional execution with predicate registers
+   - **Impact:** 1-3% incremental improvements
+   - **See:** `VEGA_7NM_ISA_OPTIMIZATION_OPPORTUNITIES.md` for details
 
 ### Low Priority (Not Critical for LLM)
 
@@ -287,9 +306,22 @@ This document provides a comprehensive analysis of gfx906-specific optimizations
 
 ### Immediate Actions (High Impact)
 
-1. ✅ **Continue Phase 2.4:** Cache hierarchy optimization (already in progress)
-2. 🔄 **Investigate Prefetching Regression:** Profile to understand why prefetching caused regression
-3. 📋 **Evaluate DPP Usage:** Consider DPP instructions for reduction operations
+1. 🔴 **Implement DPP Instructions for Reductions:** HIGH PRIORITY
+   - Replace `__shfl_xor_sync` with DPP instructions in `warp_reduce_sum()` for gfx906
+   - Expected 2-5% improvement in reduction-heavy kernels
+   - **See:** `VEGA_7NM_ISA_OPTIMIZATION_OPPORTUNITIES.md` for implementation guide
+
+2. ✅ **Continue Phase 2.4:** Cache hierarchy optimization (already in progress)
+
+3. 🟡 **Investigate Prefetching Regression:** Profile to understand why prefetching caused regression
+   - Use ROCm profiling tools
+   - Test different prefetch distances
+   - **See:** `VEGA_7NM_ISA_OPTIMIZATION_OPPORTUNITIES.md` for investigation strategy
+
+4. 🟡 **Implement Cache-Aware Memory Access Patterns:** MEDIUM PRIORITY
+   - Add cache hints for HBM2
+   - Optimize prefetch distance
+   - Use streaming write hints for large outputs
 
 ### Future Considerations (Medium Impact)
 
@@ -308,6 +340,7 @@ This document provides a comprehensive analysis of gfx906-specific optimizations
 - **AMD Vega 7nm ISA:** [Vega 7nm Shader ISA Reference](https://gpuopen.com/download/Vega_7nm_Shader_ISA_26November2019.pdf)
 - **Current Implementation:** `ggml/src/ggml-cuda/common.cuh`, `ggml/src/ggml-cuda/mul-mat-f32-gfx906.cuh`
 - **Optimization Roadmap:** `GFX906_OPTIMIZATION_ROADMAP.md`
+- **New Opportunities:** `VEGA_7NM_ISA_OPTIMIZATION_OPPORTUNITIES.md` - Detailed analysis of additional ISA optimizations
 
 ---
 
