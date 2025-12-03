@@ -193,68 +193,15 @@ static int ggml_cuda_parse_id(char devName[]) {
 // Print detailed capability usage report for gfx906 devices
 static void ggml_cuda_print_capability_report(const ggml_cuda_device_info & info) {
 #if defined(GGML_USE_HIP)
-    GGML_LOG_INFO("\n=== gfx906 Capability Usage Report ===\n");
+    GGML_LOG_INFO("=== gfx906 Capability Report ===\n");
     
     for (int id = 0; id < info.device_count; ++id) {
         if (info.devices[id].cc >= GGML_CUDA_CC_VEGA20 && info.devices[id].cc < GGML_CUDA_CC_CDNA1) {
-            GGML_LOG_INFO("Device %d (gfx906) Capability Status:\n", id);
-            GGML_LOG_INFO("  ┌─────────────────────────────────────────────────────────────┐\n");
-            GGML_LOG_INFO("  │ Capability          │ Status    │ Usage Location           │\n");
-            GGML_LOG_INFO("  ├─────────────────────────────────────────────────────────────┤\n");
-            GGML_LOG_INFO("  │ dp4a (sdot4)         │ ✅ USED   │ Q8_0, Q8_1, MXFP4, Q2_K, │\n");
-            GGML_LOG_INFO("  │                     │           │ Q4_0, Q4_1 kernels       │\n");
-            GGML_LOG_INFO("  ├─────────────────────────────────────────────────────────────┤\n");
-            GGML_LOG_INFO("  │ V_DOT2_F32_F16      │ ✅ USED   │ fattn-vec.cuh,           │\n");
-            GGML_LOG_INFO("  │                     │           │ fattn-common.cuh        │\n");
-            GGML_LOG_INFO("  ├─────────────────────────────────────────────────────────────┤\n");
-            GGML_LOG_INFO("  │ V_FMAC_F32          │ ✅ USED   │ mmvf.cu, fattn-tile.cuh, │\n");
-            GGML_LOG_INFO("  │                     │           │ fattn-common.cuh        │\n");
-            GGML_LOG_INFO("  ├─────────────────────────────────────────────────────────────┤\n");
-            GGML_LOG_INFO("  │ V_DOT8_I32_I4       │ ❌ UNUSED │ Available but never     │\n");
-            GGML_LOG_INFO("  │                     │           │ called. Could optimize │\n");
-            GGML_LOG_INFO("  │                     │           │ Q4_0/Q4_1 kernels      │\n");
-            GGML_LOG_INFO("  ├─────────────────────────────────────────────────────────────┤\n");
-            GGML_LOG_INFO("  │ MMQ heuristics      │ ✅ USED   │ mmq.cu (gfx906-specific)│\n");
-            GGML_LOG_INFO("  ├─────────────────────────────────────────────────────────────┤\n");
-            GGML_LOG_INFO("  │ Wavefront reductions│ ✅ OPTIMIZED │ common.cuh (64-lane     │\n");
-            GGML_LOG_INFO("  │                     │           │ optimized shuffle)      │\n");
-            GGML_LOG_INFO("  └─────────────────────────────────────────────────────────────┘\n");
-            GGML_LOG_INFO("\n  Optimization Analysis:\n");
-            GGML_LOG_INFO("    • V_DOT8_I32_I4: Function ggml_cuda_dot8_i4() exists but is unused.\n");
-            GGML_LOG_INFO("      FEASIBILITY: Not practical for current Q4 x Q8 kernels because:\n");
-            GGML_LOG_INFO("        - Instruction requires BOTH operands as i4x8 (8 4-bit values)\n");
-            GGML_LOG_INFO("        - Q4 values are 4-bit (can be packed as i4x8) ✓\n");
-            GGML_LOG_INFO("        - Q8 values are int8 (8-bit), NOT i4 (4-bit) ✗\n");
-            GGML_LOG_INFO("        - Converting int8→i4 would lose precision and add overhead\n");
-            GGML_LOG_INFO("      CONCLUSION: Current dp4a-based approach is optimal for Q4 x Q8.\n");
-            GGML_LOG_INFO("      POTENTIAL USE: Could benefit Q4 x Q4 kernels if they existed.\n");
-            GGML_LOG_INFO("\n");
-            GGML_LOG_INFO("  Performance Logging Options:\n");
-            GGML_LOG_INFO("    • GGML_HIP_LOG_PERFORMANCE=1: Log kernel selection, shared memory usage, optimization opportunities\n");
-            GGML_LOG_INFO("    • GGML_CUDA_MMQ_DEBUG=1: Log detailed MMQ kernel selection decisions\n");
-            GGML_LOG_INFO("    • GGML_HIP_PROFILE_GRAPHS=1: Profile HIP graph capture/instantiation/launch times\n");
-            GGML_LOG_INFO("\n");
+            GGML_LOG_INFO("Device %d: dp4a ✅ | V_DOT2_F32_F16 ✅ | V_FMAC_F32 ✅ | V_DOT8_I32_I4 ❌ | MMQ ✅ | DPP ✅\n", id);
         }
     }
     
-    GGML_LOG_INFO("=== End Capability Report ===\n\n");
-    
-    // Initialize prefetching state from environment variable
-    // NOTE: Prefetching is disabled by default due to ~16% performance regression
-    // Enable via GGML_HIP_PREFETCH_ENABLE=1 (experimental, not recommended)
-#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
-    const bool prefetch_enabled = ggml_cuda_prefetch_enabled();
-    if (prefetch_enabled) {
-        fprintf(stderr, "ggml_cuda: ⚠️  HBM2 prefetching enabled (experimental - causes ~16%% regression)\n");
-        fprintf(stderr, "ggml_cuda:    Benchmark: pp512 = 549.14 t/s (vs 652.58 t/s without prefetch)\n");
-        fprintf(stderr, "ggml_cuda:    Recommendation: Disable prefetching for better performance\n");
-        fflush(stderr);
-    }
-    for (int id = 0; id < info.device_count; ++id) {
-        ggml_cuda_set_device(id);
-        ggml_cuda_set_prefetch_enabled(prefetch_enabled);
-    }
-#endif // defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+    GGML_LOG_INFO("=== End Capability Report ===\n");
 #endif // defined(GGML_USE_HIP)
 }
 
@@ -443,13 +390,7 @@ static ggml_cuda_device_info ggml_cuda_init() {
     // Initialize performance logging if requested
     static const bool log_performance = (getenv("GGML_HIP_LOG_PERFORMANCE") != nullptr);
     if (log_performance) {
-        GGML_LOG_INFO("ggml_cuda_init: Performance logging enabled (GGML_HIP_LOG_PERFORMANCE=1)\n");
-        GGML_LOG_INFO("  This will log:\n");
-        GGML_LOG_INFO("    - Kernel selection (MMQ vs MMVQ vs cuBLAS)\n");
-        GGML_LOG_INFO("    - Shared memory usage and constraints\n");
-        GGML_LOG_INFO("    - Optimization opportunities (batch size, padding issues)\n");
-        GGML_LOG_INFO("    - MMQ kernel tile size selection\n");
-        GGML_LOG_INFO("  Use GGML_CUDA_MMQ_DEBUG=1 for detailed MMQ selection decisions\n");
+        GGML_LOG_INFO("ggml_cuda_init: Performance logging enabled\n");
     }
 
     // configure logging to stdout
