@@ -604,7 +604,6 @@ static void dequantize_row_iq4_xs_cuda(const void * vx, dst_t * y, const int64_t
     dequantize_block_iq4_xs<<<nb, 32, 0, stream>>>(vx, y);
 }
 
-template<typename dst_t>
 // gfx906-optimized dequantization kernel for MXFP4
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
 template<typename dst_t>
@@ -650,6 +649,7 @@ static __global__ void dequantize_block_mxfp4_gfx906(const void * __restrict__ v
 }
 #endif // GGML_USE_HIP && GGML_HIP_GFX906_OPTIMIZE
 
+template<typename dst_t>
 static void dequantize_row_mxfp4_cuda(const void * vx, dst_t * y, const int64_t k, cudaStream_t stream) {
     const int nb = (k + QK_K - 1) / QK_K;
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
