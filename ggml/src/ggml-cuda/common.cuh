@@ -298,6 +298,24 @@ static bool amd_wmma_available(const int cc) {
     return GGML_CUDA_CC_IS_RDNA4(cc);
 }
 
+// HBM2-aware prefetching for gfx906 (Vega20/MI50/Radeon VII)
+// Prefetches data from global memory to improve memory bandwidth utilization
+// For HBM2, prefetching helps hide memory latency (~300-400 cycles)
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+static __device__ __forceinline__ void ggml_cuda_prefetch_hbm2(const void * addr) {
+    // Use compiler prefetch hint for AMD gfx906
+    // This hints the GPU to prefetch data into L2 cache
+    // Read-only prefetch (0 = read, 1 = write)
+    // Locality: 0 = no locality, 1 = low, 2 = moderate, 3 = high
+    __builtin_prefetch(addr, 0, 2); // Read, moderate locality
+}
+#else
+static __device__ __forceinline__ void ggml_cuda_prefetch_hbm2(const void * addr) {
+    // No-op for non-gfx906 or when optimization disabled
+    GGML_UNUSED(addr);
+}
+#endif // defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+
 static bool volta_mma_available(const int cc) {
     return GGML_CUDA_CC_IS_NVIDIA(cc) && ggml_cuda_highest_compiled_arch(cc) == GGML_CUDA_CC_VOLTA;
 }

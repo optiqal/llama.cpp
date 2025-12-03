@@ -670,6 +670,20 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
 
         const block_q8_0 * bxi = (const block_q8_0 *) x + kbx0 + i*stride + kbx;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Prefetch next iteration's data to hide HBM2 latency
+        // Prefetch stride ahead to overlap memory access with computation
+        if (i0 + nrows*nwarps < mmq_y) {
+            const int i_next = (need_check ? min(i0 + nrows*nwarps + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row), i_max) 
+                                          : i0 + nrows*nwarps + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row));
+            if (i_next < mmq_y) {
+                const block_q8_0 * bxi_next = (const block_q8_0 *) x + kbx0 + i_next*stride + kbx;
+                ggml_cuda_prefetch_hbm2(bxi_next);
+                ggml_cuda_prefetch_hbm2(bxi_next + MMQ_TILE_NE_K/QI8_0);
+            }
+        }
+#endif // defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
         x_qs[i*MMQ_MMA_TILE_X_K_Q8_0 + 0             + txi] = get_int_b2(bxi[0].qs,                   kqsx);
         x_qs[i*MMQ_MMA_TILE_X_K_Q8_0 + MMQ_TILE_NE_K + txi] = get_int_b2(bxi[MMQ_TILE_NE_K/QI8_0].qs, kqsx);
@@ -692,6 +706,18 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
         }
 
         const block_q8_0 * bxi = (const block_q8_0 *) x + kbx0 + i*stride + kbxd;
+
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Prefetch next iteration's scale data
+        if (i0 + nwarps * rows_per_warp < mmq_y) {
+            const int i_next = (need_check ? min(i0 + nwarps * rows_per_warp + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row, i_max)
+                                          : i0 + nwarps * rows_per_warp + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row);
+            if (i_next < mmq_y) {
+                const block_q8_0 * bxi_next = (const block_q8_0 *) x + kbx0 + i_next*stride + kbxd;
+                ggml_cuda_prefetch_hbm2(bxi_next);
+            }
+        }
+#endif // defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
 
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
         x_df[i*MMQ_MMA_TILE_X_K_Q8_0                 + kbxd] = bxi->d;
@@ -751,6 +777,18 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
 
         const block_mxfp4 * bxi = (const block_mxfp4 *) x + kbx0 + i*stride + kbx;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Prefetch next iteration's data to hide HBM2 latency
+        if (i0 + nrows*nwarps < mmq_y) {
+            const int i_next = (need_check ? min(i0 + nrows*nwarps + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row), i_max)
+                                          : i0 + nrows*nwarps + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row));
+            if (i_next < mmq_y) {
+                const block_mxfp4 * bxi_next = (const block_mxfp4 *) x + kbx0 + i_next*stride + kbx;
+                ggml_cuda_prefetch_hbm2(bxi_next);
+            }
+        }
+#endif // defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+
         const int aux_q4 = get_int_b1(bxi->qs, kqsx);
         const int2 v = get_int_from_table_16(aux_q4, kvalues_table);
         const int k0 = kbx * (2 * QI_MXFP4) + kqsx;
@@ -777,6 +815,18 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
         }
 
         const block_mxfp4 * bxi = (const block_mxfp4 *) x + kbx0 + i*stride + kbxd;
+
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Prefetch next iteration's scale data
+        if (i0 + nwarps * rows_per_warp < mmq_y) {
+            const int i_next = (need_check ? min(i0 + nwarps * rows_per_warp + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row, i_max)
+                                          : i0 + nwarps * rows_per_warp + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row);
+            if (i_next < mmq_y) {
+                const block_mxfp4 * bxi_next = (const block_mxfp4 *) x + kbx0 + i_next*stride + kbxd;
+                ggml_cuda_prefetch_hbm2(bxi_next);
+            }
+        }
+#endif // defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
 
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
         x_df[i*MMQ_MMA_TILE_X_K_Q8_1                 + kbxd] = ggml_cuda_e8m0_to_fp32(bxi->e)*0.5f;
