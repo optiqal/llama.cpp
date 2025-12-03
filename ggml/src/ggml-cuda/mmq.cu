@@ -371,26 +371,45 @@ bool ggml_cuda_should_use_mmq(enum ggml_type type, int cc, int64_t ne11) {
             reason = use_mmq ? "ne11 < MMQ_DP4A_MAX_BATCH_SIZE" : "ne11 >= MMQ_DP4A_MAX_BATCH_SIZE (fallback to rocBLAS)";
         }
         
-        // Debug logging for gfx906 MMQ selection
+        // Debug logging for gfx906 MMQ selection (reduced verbosity)
         if (ggml_cuda_mmq_debug_log()) {
-            // Use a simple switch to avoid dependency on ggml_type_name
-            const char * type_str = "unknown";
-            switch (type) {
-                case GGML_TYPE_Q8_0: type_str = "Q8_0"; break;
-                case GGML_TYPE_MXFP4: type_str = "MXFP4"; break;
-                case GGML_TYPE_Q4_0: type_str = "Q4_0"; break;
-                case GGML_TYPE_Q4_1: type_str = "Q4_1"; break;
-                case GGML_TYPE_Q5_0: type_str = "Q5_0"; break;
-                case GGML_TYPE_Q5_1: type_str = "Q5_1"; break;
-                case GGML_TYPE_Q4_K: type_str = "Q4_K"; break;
-                case GGML_TYPE_Q5_K: type_str = "Q5_K"; break;
-                default: break;
+            static int decision_count = 0;
+            static int mmq_count = 0;
+            static int rocblas_count = 0;
+            
+            decision_count++;
+            if (use_mmq) {
+                mmq_count++;
+            } else {
+                rocblas_count++;
             }
-            fprintf(stderr, "gfx906 MMQ decision: type=%s ne11=%ld -> %s (%s)\n", 
-                type_str, (long)ne11, use_mmq ? "MMQ" : "rocBLAS", reason);
-            fflush(stderr);
-            GGML_LOG_INFO("gfx906 MMQ decision: type=%s ne11=%ld -> %s (%s)\n", 
-                type_str, (long)ne11, use_mmq ? "MMQ" : "rocBLAS", reason);
+            
+            // Log first 10 decisions for verification
+            if (decision_count <= 10) {
+                const char * type_str = "unknown";
+                switch (type) {
+                    case GGML_TYPE_Q8_0: type_str = "Q8_0"; break;
+                    case GGML_TYPE_MXFP4: type_str = "MXFP4"; break;
+                    case GGML_TYPE_Q4_0: type_str = "Q4_0"; break;
+                    case GGML_TYPE_Q4_1: type_str = "Q4_1"; break;
+                    case GGML_TYPE_Q5_0: type_str = "Q5_0"; break;
+                    case GGML_TYPE_Q5_1: type_str = "Q5_1"; break;
+                    case GGML_TYPE_Q4_K: type_str = "Q4_K"; break;
+                    case GGML_TYPE_Q5_K: type_str = "Q5_K"; break;
+                    default: break;
+                }
+                fprintf(stderr, "gfx906 MMQ decision[%d]: type=%s ne11=%ld -> %s (%s)\n", 
+                    decision_count, type_str, (long)ne11, use_mmq ? "MMQ" : "rocBLAS", reason);
+                fflush(stderr);
+            }
+            
+            // Log summary every 100 decisions
+            if (decision_count % 100 == 0) {
+                fprintf(stderr, "gfx906 MMQ summary (after %d decisions): MMQ=%d (%.1f%%), rocBLAS=%d (%.1f%%)\n",
+                    decision_count, mmq_count, 100.0 * mmq_count / decision_count,
+                    rocblas_count, 100.0 * rocblas_count / decision_count);
+                fflush(stderr);
+            }
         }
         
         return use_mmq;
