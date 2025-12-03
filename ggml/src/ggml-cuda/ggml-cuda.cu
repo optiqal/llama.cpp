@@ -2530,9 +2530,9 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
             const int M = ne00;  // src0->ne[0] = 2880
             const int N = ne11;  // src1->ne[1] = 128
             const int K = ne01;  // src0->ne[1] = ne10 = 2880
-            // Strides: nb01 is stride between rows of src0, s11 is stride between rows of src1
+            // Strides: nb01 is stride between rows of src0, nb11 is stride between rows of src1
             const int64_t stride_A = nb01 / sizeof(float); // stride for src0 (row stride in elements)
-            const int64_t stride_B = s11; // stride for src1 (already in elements)
+            const int64_t stride_B = nb11 / sizeof(float); // stride for src1 (row stride in elements)
             const int64_t stride_C = ne0;  // stride for dst (row length in elements)
             
             mul_mat_f32_gfx906(ctx.stream(), A, B, C, M, N, K, stride_A, stride_B, stride_C);
