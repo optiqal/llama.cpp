@@ -303,9 +303,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nrows*nwarps) {
         int i = i0 + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row);
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q4_0 * bxi = (const block_q4_0 *) x + kbx0 + i*stride + kbx;
         const int qs0 = get_int_b2(bxi->qs, kqsx);
@@ -326,9 +336,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * rows_per_warp) {
         int i = i0 + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         // Memory access optimization: same pattern as Q8_0
         const block_q4_0 * bxi = (const block_q4_0 *) x + kbx0 + i*stride + kbxd;
@@ -416,9 +436,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nrows*nwarps) {
         int i = i0 + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row);
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q4_1 * bxi = (const block_q4_1 *) x + kbx0 + i*stride + kbx;
         const int qs0 = get_int_b4(bxi->qs, kqsx);
@@ -439,9 +469,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * rows_per_warp) {
         int i = i0 + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         // Memory access optimization: same pattern as Q8_0
         const block_q4_1 * bxi = (const block_q4_1 *) x + kbx0 + i*stride + kbxd;
@@ -529,9 +569,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nrows*nwarps) {
         int i = i0 + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row);
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q5_0 * bxi = (const block_q5_0 *) x + kbx0 + i*stride + kbx;
 
@@ -569,9 +619,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * rows_per_warp) {
         int i = i0 + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q5_0 * bxi = (const block_q5_0 *) x + kbx0 + i*stride + kbxd;
 
@@ -607,9 +667,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nrows*nwarps) {
         int i = i0 + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row);
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q5_1 * bxi = (const block_q5_1 *) x + kbx0 + i*stride + kbx;
 
@@ -645,9 +715,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * rows_per_warp) {
         int i = i0 + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q5_1 * bxi = (const block_q5_1 *) x + kbx0 + i*stride + kbxd;
 
@@ -691,9 +771,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nrows*nwarps) {
         int i = i0 + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row);
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         // Memory access pattern optimization for gfx906:
         // - Access pattern: bxi = x + kbx0 + i*stride + kbx
@@ -741,9 +831,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * rows_per_warp) {
         int i = i0 + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         // Memory access optimization: same pattern as above
         // Threads with same i but different kbxd access consecutive blocks (coalesced)
@@ -829,9 +929,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nrows*nwarps) {
         int i = i0 + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row);
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         // Memory access pattern optimization for gfx906:
         // - Access pattern: bxi = x + kbx0 + i*stride + kbx
@@ -886,9 +996,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * rows_per_warp) {
         int i = i0 + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         // Memory access optimization: same pattern as above
         // Threads with same i but different kbxd access consecutive blocks (coalesced)
@@ -1106,7 +1226,11 @@ static __device__ __forceinline__ void vec_dot_q8_1_q8_1_dp4a(
     const int   * y_qs = (const int   *) y + 4;
     const half2 * y_ds = (const half2 *) y;
 
-// #pragma unroll
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+    // Enable loop unrolling for better ILP on gfx906
+    // Loop iterates 4 times (MMQ_TILE_NE_K=32, VDR_Q8_0_Q8_1_MMQ=8), safe to unroll
+#pragma unroll
+#endif
     for (int k01 = 0; k01 < MMQ_TILE_NE_K; k01 += VDR_Q8_0_Q8_1_MMQ) {
         const int k0 = k00 + k01;
 
@@ -1493,9 +1617,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nrows*nwarps) {
         int i = i0 + threadIdx.y*nrows + threadIdx.x/threads_per_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q2_K * bxi = (const block_q2_K *) x + kbx0 + i*stride;
 
@@ -1878,9 +2012,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nrows*nwarps) {
         int i = i0 + threadIdx.y*nrows + threadIdx.x/threads_per_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q3_K * bxi = (const block_q3_K *) x + kbx0 + i*stride;
 
@@ -1909,9 +2053,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps*rows_per_warp) {
         int i = i0 + threadIdx.y*rows_per_warp + threadIdx.x/4;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q3_K * bxi = (const block_q3_K *) x + kbx0 + i*stride;
 
@@ -1945,9 +2099,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps*warp_size) {
         int i = (i0 + threadIdx.y*warp_size + threadIdx.x) % mmq_y;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q3_K * bxi = (const block_q3_K *) x + kbx0 + i*stride;
 
@@ -2024,9 +2188,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nrows*nwarps) {
         int i = i0 + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row);
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q4_K * bxi = (const block_q4_K *) x + kbx0 + i*stride;
         const int qs0 = get_int_b4(bxi->qs, txi);
@@ -2081,9 +2255,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps*warp_size) {
         int i = (i0 + threadIdx.y*warp_size + threadIdx.x) % mmq_y;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q4_K * bxi = (const block_q4_K *) x + kbx0 + i*stride;
 
@@ -2094,9 +2278,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps*rows_per_warp) {
         int i = (i0 + threadIdx.y*rows_per_warp + threadIdx.x/(MMQ_TILE_NE_K/8)) % mmq_y;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q4_K * bxi = (const block_q4_K *) x + kbx0 + i*stride + (threadIdx.x % (MMQ_TILE_NE_K/8)) / (QI4_K/8);
 
@@ -2168,9 +2362,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nrows*nwarps) {
         int i = i0 + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row);
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q5_K * bxi = (const block_q5_K *) x + kbx0 + i*stride;
         const int ky = QR5_K*txi;
@@ -2237,9 +2441,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps*warp_size) {
         int i = (i0 + threadIdx.y*warp_size + threadIdx.x) % mmq_y;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q5_K * bxi = (const block_q5_K *) x + kbx0 + i*stride;
 
@@ -2251,9 +2465,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps*rows_per_warp) {
         int i = (i0 + threadIdx.y*rows_per_warp + threadIdx.x/(MMQ_TILE_NE_K/8)) % mmq_y;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q5_K * bxi = (const block_q5_K *) x + kbx0 + i*stride;
 
@@ -2326,9 +2550,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nrows*nwarps) {
         int i = i0 + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row);
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q6_K * bxi = (const block_q6_K *) x + kbx0 + i*stride;
 
@@ -2356,9 +2590,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps*warp_size) {
         int i = (i0 + threadIdx.y*warp_size + threadIdx.x) % mmq_y;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q6_K * bxi = (const block_q6_K *) x + kbx0 + i*stride;
 
@@ -2374,9 +2618,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps*rows_per_warp) {
         int i = (i0 + threadIdx.y*rows_per_warp + threadIdx.x/(MMQ_TILE_NE_K/8)) % mmq_y;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_q6_K * bxi = (const block_q6_K *) x + kbx0 + i*stride + (threadIdx.x % (MMQ_TILE_NE_K/8)) / 4;
 
@@ -2678,9 +2932,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nrows*nwarps) {
         int i = i0 + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row);
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_iq4_nl * bxi = (const block_iq4_nl *) x + kbx0 + i*stride + kbx;
 
@@ -2705,9 +2969,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * rows_per_warp) {
         int i = i0 + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_iq4_nl * bxi = (const block_iq4_nl *) x + kbx0 + i*stride + kbxd;
 
@@ -2741,9 +3015,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * nrows) {
         int i = i0 + threadIdx.y*nrows + threadIdx.x/threads_per_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_iq2_xxs * bxi = (const block_iq2_xxs *) x + kbx0 + i*stride;
 
@@ -2803,9 +3087,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * nrows) {
         int i = i0 + threadIdx.y*nrows + threadIdx.x/threads_per_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_iq2_xs * bxi = (const block_iq2_xs *) x + kbx0 + i*stride;
 
@@ -2862,9 +3156,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * nrows) {
         int i = i0 + threadIdx.y*nrows + threadIdx.x/threads_per_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_iq2_s * bxi = (const block_iq2_s *) x + kbx0 + i*stride;
 
@@ -2929,9 +3233,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * nrows) {
         int i = i0 + threadIdx.y*nrows + threadIdx.x/threads_per_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_iq3_xxs * bxi = (const block_iq3_xxs *) x + kbx0 + i*stride;
 
@@ -2989,9 +3303,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * nrows) {
         int i = i0 + threadIdx.y*nrows + threadIdx.x/threads_per_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_iq3_s * bxi = (const block_iq3_s *) x + kbx0 + i*stride;
 
@@ -3056,9 +3380,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * nrows) {
         int i = i0 + threadIdx.y*nrows + threadIdx.x/threads_per_row;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_iq1_s * bxi = (const block_iq1_s *) x + kbx0 + i*stride;
 
@@ -3129,9 +3463,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nrows*nwarps) {
         int i = i0 + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row);
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_iq4_xs * bxi = (const block_iq4_xs *) x + kbx0 + i*stride;
 
@@ -3153,9 +3497,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     for (int i0 = 0; i0 < mmq_y; i0 += nwarps * rows_per_warp) {
         int i = i0 + threadIdx.y * rows_per_warp + threadIdx.x / (MMQ_TILE_NE_K/4);
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Optimize conditional execution: Use conditional move instead of branch when possible
+        // This helps compiler use predicate registers (v_cndmask_b32) instead of branches
+        // Compiler hint: i_max is typically >= i in hot path
+        if (need_check) {
+            // Use conditional move pattern - compiler can optimize to v_cndmask_b32
+            i = (i <= i_max) ? i : i_max;
+        }
+#else
         if (need_check) {
             i = min(i, i_max);
         }
+#endif
 
         const block_iq4_xs * bxi = (const block_iq4_xs *) x + kbx0 + i*stride;
 
