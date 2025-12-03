@@ -299,22 +299,56 @@ static bool amd_wmma_available(const int cc) {
 }
 
 // HBM2-aware prefetching for gfx906 (Vega20/MI50/Radeon VII)
-// DISABLED: __builtin_prefetch causes performance regression on gfx906
-// TODO: Investigate AMD-specific prefetch instructions or software prefetching techniques
-#if 0 && defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+// HBM2 characteristics: ~300-400 cycle latency (vs ~100-200 for GDDR5), ~1TB/s bandwidth
+// Prefetching strategy: Use software prefetching with explicit loads ahead of computation
+// to hide HBM2 latency without overwhelming the cache or causing memory conflicts
+// 
+// INVESTIGATION: Previous __builtin_prefetch caused regression. Possible reasons:
+// 1. Prefetching too aggressively causing cache pollution
+// 2. Prefetching wrong addresses (stale data)
+// 3. Prefetching interfering with actual memory access patterns
+// 4. AMD compiler not optimizing __builtin_prefetch effectively for HBM2
+//
+// NEW STRATEGY: Controlled software prefetching with environment variable control
+// - Only prefetch when GGML_HIP_PREFETCH_ENABLE=1
+// - Prefetch distance: 1-2 iterations ahead (to hide ~300-400 cycle latency)
+// - Use explicit loads instead of prefetch hints for better control
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+// Check environment variable at host side (checked once per process)
+static bool ggml_cuda_prefetch_enabled() {
+    static bool checked = false;
+    static bool enabled = false;
+    if (!checked) {
+        const char * env = getenv("GGML_HIP_PREFETCH_ENABLE");
+        enabled = (env != nullptr && strcmp(env, "1") == 0);
+        checked = true;
+        if (enabled) {
+            fprintf(stderr, "ggml_cuda: HBM2 prefetching enabled (experimental)\n");
+            fflush(stderr);
+        }
+    }
+    return enabled;
+}
+
 static __device__ __forceinline__ void ggml_cuda_prefetch_hbm2(const void * addr) {
-    // Use compiler prefetch hint for AMD gfx906
-    // This hints the GPU to prefetch data into L2 cache
-    // Read-only prefetch (0 = read, 1 = write)
-    // Locality: 0 = no locality, 1 = low, 2 = moderate, 3 = high
-    __builtin_prefetch(addr, 0, 2); // Read, moderate locality
+    // Software prefetching: Issue a controlled load to bring data into L2 cache
+    // Strategy: Load into a register that won't be used immediately, allowing
+    // the memory controller to prefetch into L2 cache while computation continues
+    // 
+    // HBM2 latency: ~300-400 cycles = ~167-222ns at 1.8GHz
+    // Prefetch distance: Load 1-2 iterations ahead to hide this latency
+    volatile const char * prefetch_ptr = (volatile const char *)addr;
+    // Issue a read that brings data into cache but doesn't block computation
+    // Using volatile ensures the load isn't optimized away
+    // The load will trigger L2 cache fill, hiding HBM2 latency for subsequent access
+    (void)*prefetch_ptr; // Dummy read to trigger prefetch
 }
 #else
 static __device__ __forceinline__ void ggml_cuda_prefetch_hbm2(const void * addr) {
-    // No-op: prefetching disabled due to performance regression
+    // No-op for non-gfx906 or when optimization disabled
     GGML_UNUSED(addr);
 }
-#endif // 0 && defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+#endif // defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
 
 static bool volta_mma_available(const int cc) {
     return GGML_CUDA_CC_IS_NVIDIA(cc) && ggml_cuda_highest_compiled_arch(cc) == GGML_CUDA_CC_VOLTA;

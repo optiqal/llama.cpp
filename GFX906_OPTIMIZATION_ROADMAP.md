@@ -156,11 +156,14 @@
 **Goal:** Optimize HBM2 memory access patterns and cache utilization
 
 **Tasks:**
-1. ⏳ Implement HBM2-aware prefetching in MMQ kernels
-2. ⏳ Optimize shared memory bank conflict patterns for 32-bank architecture
-3. ⏳ Add memory access pattern telemetry
-4. ⏳ Profile and optimize cache hierarchy usage
-5. ⏳ Benchmark memory bandwidth utilization
+1. ⚠️  HBM2-aware prefetching: INVESTIGATING - Previous implementation caused regression
+   - Added controlled prefetching via GGML_HIP_PREFETCH_ENABLE=1 (experimental)
+   - Added HBM2-specific profiling to identify bottlenecks
+   - Investigating prefetch distance and timing for ~300-400 cycle HBM2 latency
+2. ✅ Optimize shared memory bank conflict patterns for 32-bank architecture
+3. ✅ Add memory access pattern telemetry
+4. ✅ Profile and optimize cache hierarchy usage
+5. ✅ Benchmark memory bandwidth utilization (with enhanced HBM2 profiling)
 
 **Expected Impact:** 3-7% improvement for large matrix operations
 

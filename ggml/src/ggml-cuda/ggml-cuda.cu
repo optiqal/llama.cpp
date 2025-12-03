@@ -2382,10 +2382,12 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
     bool use_batched_cublas_bf16 = src0->type == GGML_TYPE_BF16 && bf16_mma_hardware_available(cc);
     bool use_batched_cublas_f32  = src0->type == GGML_TYPE_F32;
 
-    // Performance logging
+    // Performance logging with HBM2-specific profiling
     if (log_performance) {
         static std::mutex stats_mutex;
         static std::map<std::string, int> global_kernel_stats;
+        static std::map<std::string, double> kernel_timings; // Track kernel execution times
+        static std::map<std::string, int64_t> kernel_memory_ops; // Track memory operations
         static int total_calls = 0;
         static int logged_calls = 0;
         
@@ -2396,6 +2398,9 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
         if (should_log) {
             logged_calls++;
         }
+        
+        // Timing for HBM2 bottleneck analysis
+        const auto timing_start = std::chrono::high_resolution_clock::now();
         
         // Determine kernel name (always, not just for logging)
         const char * kernel_name = nullptr;
@@ -2465,28 +2470,65 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
                 fprintf(stderr, "  Data size: %.2f GB, split=%d, bad_padding=%d\n",
                     gb_per_op, split ? 1 : 0, bad_padding_clear ? 1 : 0);
                 
-                // Memory access pattern telemetry
+                // Memory access pattern telemetry with HBM2-specific profiling
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
-                fprintf(stderr, "  Memory telemetry: total=%.3f GB (read=%.3f GB, write=%.3f GB)\n",
-                    total_mem_gb, read_bandwidth_gb, write_bandwidth_gb);
-                fprintf(stderr, "  Access patterns: src0_stride=%ld (%s), src1_stride=%ld (%s)\n",
-                    (long)stride_src0, src0_coalesced ? "coalesced" : "scattered",
-                    (long)stride_src1, src1_coalesced ? "coalesced" : "scattered");
-                
-                // Estimate cache behavior (for gfx906: 4MB L2 cache)
-                const double l2_cache_size_gb = 4.0 / 1024.0; // 4MB L2 cache
-                const bool likely_cache_miss = (total_mem_gb > l2_cache_size_gb * 0.5); // >50% of L2 cache
-                if (likely_cache_miss) {
-                    fprintf(stderr, "  ⚠️  Cache: %.3f GB > 50%% of L2 (4MB), likely cache misses\n", total_mem_gb);
+                const int cc = ggml_cuda_info().devices[ctx.device].cc;
+                if (cc >= GGML_CUDA_CC_VEGA20 && cc < GGML_CUDA_CC_CDNA1) {
+                    // HBM2 characteristics for gfx906: ~300-400 cycle latency, ~1TB/s bandwidth
+                    const double hbm2_bandwidth_tb = 1.0; // 1TB/s theoretical peak
+                    const double hbm2_latency_cycles = 350.0; // Average HBM2 latency (~300-400 cycles)
+                    const double gpu_freq_ghz = 1.8; // Typical gfx906 frequency (~1.8 GHz)
+                    const double hbm2_latency_ns = (hbm2_latency_cycles / gpu_freq_ghz); // ~194ns latency
+                    
+                    fprintf(stderr, "  Memory telemetry: total=%.3f GB (read=%.3f GB, write=%.3f GB)\n",
+                        total_mem_gb, read_bandwidth_gb, write_bandwidth_gb);
+                    fprintf(stderr, "  Access patterns: src0_stride=%ld (%s), src1_stride=%ld (%s)\n",
+                        (long)stride_src0, src0_coalesced ? "coalesced" : "scattered",
+                        (long)stride_src1, src1_coalesced ? "coalesced" : "scattered");
+                    
+                    // Estimate cache behavior (for gfx906: 4MB L2 cache)
+                    const double l2_cache_size_gb = 4.0 / 1024.0; // 4MB L2 cache
+                    const bool likely_cache_miss = (total_mem_gb > l2_cache_size_gb * 0.5); // >50% of L2 cache
+                    if (likely_cache_miss) {
+                        fprintf(stderr, "  ⚠️  Cache: %.3f GB > 50%% of L2 (4MB), likely cache misses\n", total_mem_gb);
+                    } else {
+                        fprintf(stderr, "  ✓ Cache: %.3f GB fits in L2 cache, good cache locality\n", total_mem_gb);
+                    }
+                    
+                    // HBM2 bandwidth utilization estimate
+                    const double bandwidth_utilization = (total_bandwidth_gb / 1024.0) / hbm2_bandwidth_tb * 100.0;
+                    fprintf(stderr, "  HBM2 Bandwidth: %.3f GB/op, estimated utilization: %.1f%% of peak (%.1f TB/s)\n",
+                        total_bandwidth_gb, bandwidth_utilization, hbm2_bandwidth_tb);
+                    
+                    // Estimate memory operations count and latency impact
+                    // For matrix multiplication: each element access may require HBM2 access if not cached
+                    const int64_t total_elements_accessed = src0->ne[0] * src0->ne[1] + src1->ne[0] * src1->ne[1] + dst->ne[0] * dst->ne[1];
+                    const double estimated_memory_ops = (double)total_elements_accessed;
+                    const double estimated_latency_ns = estimated_memory_ops * hbm2_latency_ns * 0.1; // Assume 10% cache miss rate
+                    
+                    fprintf(stderr, "  HBM2 Latency Analysis:\n");
+                    fprintf(stderr, "    Estimated memory operations: %.0f elements\n", estimated_memory_ops);
+                    fprintf(stderr, "    HBM2 latency: ~%.0f cycles (~%.1f ns) per access\n", hbm2_latency_cycles, hbm2_latency_ns);
+                    fprintf(stderr, "    Estimated total latency (10%% miss rate): ~%.1f us\n", estimated_latency_ns / 1000.0);
+                    
+                    // Identify potential bottlenecks
+                    if (bandwidth_utilization > 80.0) {
+                        fprintf(stderr, "  ⚠️  HBM2 Bandwidth Bottleneck: High utilization (%.1f%%), consider reducing memory traffic\n", bandwidth_utilization);
+                    }
+                    if (likely_cache_miss && total_mem_gb > l2_cache_size_gb * 2.0) {
+                        fprintf(stderr, "  ⚠️  Cache Bottleneck: Working set (%.3f GB) >> L2 cache (4MB), prefetching may help\n", total_mem_gb);
+                    }
+                    if (!src0_coalesced || !src1_coalesced) {
+                        fprintf(stderr, "  ⚠️  Access Pattern Bottleneck: Scattered access patterns increase HBM2 latency impact\n");
+                    }
                 } else {
-                    fprintf(stderr, "  ✓ Cache: %.3f GB fits in L2 cache, good cache locality\n", total_mem_gb);
+                    // Fallback for non-gfx906
+                    fprintf(stderr, "  Memory telemetry: total=%.3f GB (read=%.3f GB, write=%.3f GB)\n",
+                        total_mem_gb, read_bandwidth_gb, write_bandwidth_gb);
+                    fprintf(stderr, "  Access patterns: src0_stride=%ld (%s), src1_stride=%ld (%s)\n",
+                        (long)stride_src0, src0_coalesced ? "coalesced" : "scattered",
+                        (long)stride_src1, src1_coalesced ? "coalesced" : "scattered");
                 }
-                
-                // Memory bandwidth utilization estimate (gfx906: ~1TB/s HBM2)
-                const double hbm2_bandwidth_tb = 1.0; // 1TB/s theoretical peak
-                const double bandwidth_utilization = (total_bandwidth_gb / 1024.0) / hbm2_bandwidth_tb * 100.0;
-                fprintf(stderr, "  Bandwidth: %.3f GB/op, estimated utilization: %.1f%% of HBM2 peak\n",
-                    total_bandwidth_gb, bandwidth_utilization);
 #endif
                 
                 GGML_LOG_INFO("ggml_cuda_mul_mat[%d]: type=%s ne11=%ld ne0=%ld ne1=%ld -> %s (%s)\n",
@@ -2525,14 +2567,59 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
             }
         }
         
-        // Print summary every 1000 calls
+        // Note: Timing measurement happens after kernel dispatch
+        // Actual kernel execution is asynchronous, so this measures dispatch overhead
+        // For accurate kernel timing, use CUDA events or ROCm profiling tools
+        const auto timing_end = std::chrono::high_resolution_clock::now();
+        const double dispatch_time_us = std::chrono::duration<double, std::micro>(timing_end - timing_start).count();
+        
+        // Track timing statistics (dispatch overhead + some kernel time)
+        // Note: Actual kernel execution is asynchronous, so this measures dispatch overhead
+        // For accurate kernel timing, use CUDA events or ROCm profiling tools (rocprof)
+        if (kernel_name) {
+            kernel_timings[kernel_name] += dispatch_time_us;
+            // Track memory operations (approximate)
+            const int64_t mem_ops = src0->ne[0] * src0->ne[1] + src1->ne[0] * src1->ne[1] + dst->ne[0] * dst->ne[1];
+            kernel_memory_ops[kernel_name] += mem_ops;
+        }
+        
+        // Print summary every 1000 calls with HBM2 profiling
         if (total_calls % 1000 == 0 && total_calls > 0) {
             fprintf(stderr, "\n=== Kernel Usage Summary (after %d calls) ===\n", total_calls);
             for (const auto & [name, count] : global_kernel_stats) {
-                fprintf(stderr, "  %s: %d calls (%.1f%%)\n", name.c_str(), count, 100.0 * count / total_calls);
+                const double avg_time_us = (kernel_timings.count(name) > 0) ? kernel_timings[name] / count : 0.0;
+                const double avg_mem_ops = (kernel_memory_ops.count(name) > 0) ? (double)kernel_memory_ops[name] / count : 0.0;
+                fprintf(stderr, "  %s: %d calls (%.1f%%) | avg dispatch: %.2f us | avg mem ops: %.0f\n",
+                    name.c_str(), count, 100.0 * count / total_calls, avg_time_us, avg_mem_ops);
             }
-            fprintf(stderr, "==========================================\n\n");
+            
+            // HBM2 bottleneck analysis
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+            const int cc = ggml_cuda_info().devices[ctx.device].cc;
+            if (cc >= GGML_CUDA_CC_VEGA20 && cc < GGML_CUDA_CC_CDNA1) {
+                fprintf(stderr, "\n=== HBM2 Memory Bottleneck Analysis ===\n");
+                fprintf(stderr, "  HBM2 characteristics: ~300-400 cycle latency (~194ns), ~1TB/s bandwidth\n");
+                const double hbm2_latency_ns = 194.0; // ~300-400 cycles at 1.8GHz = ~194ns
+                for (const auto & [name, count] : global_kernel_stats) {
+                    if (kernel_timings.count(name) == 0 || kernel_memory_ops.count(name) == 0) continue;
+                    const double avg_time_us = kernel_timings[name] / count;
+                    const double avg_mem_ops = (double)kernel_memory_ops[name] / count;
+                    // Estimate memory-bound time (assuming 10% cache miss rate)
+                    const double estimated_mem_latency_us = (avg_mem_ops * hbm2_latency_ns * 0.1) / 1000.0;
+                    const double mem_latency_ratio = (avg_time_us > 0) ? estimated_mem_latency_us / avg_time_us : 0.0;
+                    if (mem_latency_ratio > 0.3) {
+                        fprintf(stderr, "  ⚠️  %s: Memory latency may be bottleneck (%.1f%% of dispatch time)\n",
+                            name.c_str(), mem_latency_ratio * 100.0);
+                        fprintf(stderr, "      Consider: Prefetching (GGML_HIP_PREFETCH_ENABLE=1), cache optimization\n");
+                    }
+                }
+                fprintf(stderr, "  Note: Use 'rocprof' for accurate kernel execution timing\n");
+                fprintf(stderr, "==========================================\n");
+            }
+#endif
+            fprintf(stderr, "\n");
             fflush(stderr);
+            
             GGML_LOG_INFO("\n=== Kernel Usage Summary (after %d calls) ===\n", total_calls);
             for (const auto & [name, count] : global_kernel_stats) {
                 GGML_LOG_INFO("  %s: %d calls (%.1f%%)\n", name.c_str(), count, 100.0 * count / total_calls);

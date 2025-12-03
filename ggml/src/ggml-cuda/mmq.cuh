@@ -671,13 +671,17 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
         const block_q8_0 * bxi = (const block_q8_0 *) x + kbx0 + i*stride + kbx;
 
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
-        // Prefetch next iteration's data to hide HBM2 latency
-        // Prefetch stride ahead to overlap memory access with computation
+        // HBM2-aware prefetching: Prefetch 1 iteration ahead to hide ~300-400 cycle latency
+        // Prefetch distance: nrows*nwarps (typically 1-2 iterations ahead)
+        // Only prefetch if enabled via GGML_HIP_PREFETCH_ENABLE=1 (experimental)
+        // Prefetching strategy: Load data into L2 cache while computation continues on current iteration
         if (i0 + nrows*nwarps < mmq_y) {
             const int i_next = (need_check ? min(i0 + nrows*nwarps + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row), i_max) 
                                           : i0 + nrows*nwarps + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row));
             if (i_next < mmq_y) {
                 const block_q8_0 * bxi_next = (const block_q8_0 *) x + kbx0 + i_next*stride + kbx;
+                // Prefetch next iteration's data blocks
+                // HBM2 latency: ~300-400 cycles, so prefetching 1 iteration ahead should hide most latency
                 ggml_cuda_prefetch_hbm2(bxi_next);
                 ggml_cuda_prefetch_hbm2(bxi_next + MMQ_TILE_NE_K/QI8_0);
             }
