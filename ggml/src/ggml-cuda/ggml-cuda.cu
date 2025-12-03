@@ -265,12 +265,50 @@ static ggml_cuda_device_info ggml_cuda_init() {
         
         // Log gfx906-specific features and optimizations
         if (info.devices[id].cc >= GGML_CUDA_CC_VEGA20 && info.devices[id].cc < GGML_CUDA_CC_CDNA1) {
+            static const bool log_capabilities = (getenv("GGML_HIP_LOG_CAPABILITIES") != nullptr);
+            
             GGML_LOG_INFO("    gfx906 (Vega20/MI50/Radeon VII) optimizations: enabled\n");
-            GGML_LOG_INFO("      - dp4a support: yes (via __builtin_amdgcn_sdot4)\n");
-            GGML_LOG_INFO("      - V_DOT2_F32_F16: yes\n");
-            GGML_LOG_INFO("      - V_FMAC_F32: yes (optimized float FMA operations)\n");
-            GGML_LOG_INFO("      - V_DOT8_I32_I4: yes (wrapper available)\n");
-            GGML_LOG_INFO("      - MMQ heuristics: optimized for MXFP4 and Q8_0 prompt processing\n");
+            
+            // dp4a (__builtin_amdgcn_sdot4) - FULLY UTILIZED
+            GGML_LOG_INFO("      - dp4a support: yes (via __builtin_amdgcn_sdot4)");
+            if (log_capabilities) {
+                GGML_LOG_INFO(" [USED in Q8_0, Q8_1, MXFP4, Q2_K, Q4_0, Q4_1 kernels]");
+            }
+            GGML_LOG_INFO("\n");
+            
+            // V_DOT2_F32_F16 - FULLY UTILIZED
+            GGML_LOG_INFO("      - V_DOT2_F32_F16: yes");
+            if (log_capabilities) {
+                GGML_LOG_INFO(" [USED in attention kernels via ggml_cuda_mad(half2, half2)]");
+            }
+            GGML_LOG_INFO("\n");
+            
+            // V_FMAC_F32 - FULLY UTILIZED
+            GGML_LOG_INFO("      - V_FMAC_F32: yes (optimized float FMA operations)");
+            if (log_capabilities) {
+                GGML_LOG_INFO(" [USED in mmvf.cu, fattn-tile.cuh, fattn-common.cuh]");
+            }
+            GGML_LOG_INFO("\n");
+            
+            // V_DOT8_I32_I4 - NOT USED (OPTIMIZATION OPPORTUNITY)
+            GGML_LOG_INFO("      - V_DOT8_I32_I4: yes (wrapper available)");
+            if (log_capabilities) {
+                GGML_LOG_INFO(" [NOT USED - wrapper exists but never called]");
+                GGML_LOG_INFO("\n");
+                GGML_LOG_INFO("        ⚠️  Optimization opportunity: Q4_0/Q4_1 kernels currently unpack");
+                GGML_LOG_INFO("          4-bit values and use dp4a twice. V_DOT8_I32_I4 could process");
+                GGML_LOG_INFO("          8 i4 values at once, potentially improving Q4 kernel performance.");
+            } else {
+                GGML_LOG_INFO(" [set GGML_HIP_LOG_CAPABILITIES=1 for usage details]\n");
+            }
+            
+            // MMQ heuristics - FULLY UTILIZED
+            GGML_LOG_INFO("      - MMQ heuristics: optimized for MXFP4 and Q8_0 prompt processing");
+            if (log_capabilities) {
+                GGML_LOG_INFO(" [USED in mmq.cu with gfx906-specific logic]");
+            }
+            GGML_LOG_INFO("\n");
+            
 #ifdef GGML_HIP_GFX906_OPTIMIZE
             GGML_LOG_INFO("      - gfx906-specific compiler optimizations: enabled\n");
 #else
@@ -324,10 +362,59 @@ static ggml_cuda_device_info ggml_cuda_init() {
         info.default_tensor_split[id] /= total_vram;
     }
 
+    // Print capability usage report if requested
+    static const bool log_capabilities = (getenv("GGML_HIP_LOG_CAPABILITIES") != nullptr);
+    if (log_capabilities) {
+        ggml_cuda_print_capability_report(info);
+    }
+
     // configure logging to stdout
     // CUBLAS_CHECK(cublasLoggerConfigure(1, 1, 0, nullptr));
 
     return info;
+}
+
+// Print detailed capability usage report for gfx906 devices
+static void ggml_cuda_print_capability_report(const ggml_cuda_device_info & info) {
+#if defined(GGML_USE_HIP)
+    GGML_LOG_INFO("\n=== gfx906 Capability Usage Report ===\n");
+    
+    for (int id = 0; id < info.device_count; ++id) {
+        if (info.devices[id].cc >= GGML_CUDA_CC_VEGA20 && info.devices[id].cc < GGML_CUDA_CC_CDNA1) {
+            GGML_LOG_INFO("Device %d (gfx906) Capability Status:\n", id);
+            GGML_LOG_INFO("  ┌─────────────────────────────────────────────────────────────┐\n");
+            GGML_LOG_INFO("  │ Capability          │ Status    │ Usage Location           │\n");
+            GGML_LOG_INFO("  ├─────────────────────────────────────────────────────────────┤\n");
+            GGML_LOG_INFO("  │ dp4a (sdot4)         │ ✅ USED   │ Q8_0, Q8_1, MXFP4, Q2_K, │\n");
+            GGML_LOG_INFO("  │                     │           │ Q4_0, Q4_1 kernels       │\n");
+            GGML_LOG_INFO("  ├─────────────────────────────────────────────────────────────┤\n");
+            GGML_LOG_INFO("  │ V_DOT2_F32_F16      │ ✅ USED   │ fattn-vec.cuh,           │\n");
+            GGML_LOG_INFO("  │                     │           │ fattn-common.cuh        │\n");
+            GGML_LOG_INFO("  ├─────────────────────────────────────────────────────────────┤\n");
+            GGML_LOG_INFO("  │ V_FMAC_F32          │ ✅ USED   │ mmvf.cu, fattn-tile.cuh, │\n");
+            GGML_LOG_INFO("  │                     │           │ fattn-common.cuh        │\n");
+            GGML_LOG_INFO("  ├─────────────────────────────────────────────────────────────┤\n");
+            GGML_LOG_INFO("  │ V_DOT8_I32_I4       │ ❌ UNUSED │ Available but never     │\n");
+            GGML_LOG_INFO("  │                     │           │ called. Could optimize │\n");
+            GGML_LOG_INFO("  │                     │           │ Q4_0/Q4_1 kernels      │\n");
+            GGML_LOG_INFO("  ├─────────────────────────────────────────────────────────────┤\n");
+            GGML_LOG_INFO("  │ MMQ heuristics      │ ✅ USED   │ mmq.cu (gfx906-specific)│\n");
+            GGML_LOG_INFO("  └─────────────────────────────────────────────────────────────┘\n");
+            GGML_LOG_INFO("\n  Optimization Analysis:\n");
+            GGML_LOG_INFO("    • V_DOT8_I32_I4: Function ggml_cuda_dot8_i4() exists but is unused.\n");
+            GGML_LOG_INFO("      FEASIBILITY: Not practical for current Q4 x Q8 kernels because:\n");
+            GGML_LOG_INFO("        - Instruction requires BOTH operands as i4x8 (8 4-bit values)\n");
+            GGML_LOG_INFO("        - Q4 values are 4-bit (can be packed as i4x8) ✓\n");
+            GGML_LOG_INFO("        - Q8 values are int8 (8-bit), NOT i4 (4-bit) ✗\n");
+            GGML_LOG_INFO("        - Converting int8→i4 would lose precision and add overhead\n");
+            GGML_LOG_INFO("      CONCLUSION: Current dp4a-based approach is optimal for Q4 x Q8.\n");
+            GGML_LOG_INFO("      POTENTIAL USE: Could benefit Q4 x Q4 kernels if they existed.\n");
+            GGML_LOG_INFO("\n");
+        }
+    }
+    
+    GGML_LOG_INFO("=== End Capability Report ===\n\n");
+#endif // defined(GGML_USE_HIP)
 }
 
 const ggml_cuda_device_info & ggml_cuda_info() {

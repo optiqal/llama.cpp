@@ -111,6 +111,11 @@ template <int vdr> static __device__ __forceinline__ float vec_dot_q4_0_q8_1_imp
         const int vi1 = (v[i] >> 4) & 0x0F0F0F0F;
 
         // SIMD dot product of quantized values
+        // NOTE: Currently uses dp4a twice (once for low nibbles, once for high nibbles)
+        // OPTIMIZATION OPPORTUNITY: On gfx906, could potentially use V_DOT8_I32_I4
+        // (via ggml_cuda_dot8_i4) to process 8 i4 values at once instead of unpacking
+        // and using dp4a twice. However, Q8 values (u[]) are int8, not i4, so would
+        // need packing/conversion. Set GGML_HIP_LOG_CAPABILITIES=1 to see capability report.
         sumi = ggml_cuda_dp4a(vi0, u[2*i+0], sumi);
         sumi = ggml_cuda_dp4a(vi1, u[2*i+1], sumi);
     }
@@ -135,6 +140,11 @@ template <int vdr> static __device__ __forceinline__ float vec_dot_q4_1_q8_1_imp
         const int vi1 = (v[i] >> 4) & 0x0F0F0F0F;
 
         // SIMD dot product of quantized values
+        // NOTE: Currently uses dp4a twice (once for low nibbles, once for high nibbles)
+        // OPTIMIZATION OPPORTUNITY: On gfx906, could potentially use V_DOT8_I32_I4
+        // (via ggml_cuda_dot8_i4) to process 8 i4 values at once instead of unpacking
+        // and using dp4a twice. However, Q8 values (u[]) are int8, not i4, so would
+        // need packing/conversion. Set GGML_HIP_LOG_CAPABILITIES=1 to see capability report.
         sumi = ggml_cuda_dp4a(vi0, u[2*i+0], sumi);
         sumi = ggml_cuda_dp4a(vi1, u[2*i+1], sumi);
     }

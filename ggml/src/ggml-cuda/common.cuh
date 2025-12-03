@@ -569,6 +569,31 @@ static __device__ __forceinline__ int ggml_cuda_dp4a(const int a, const int b, i
 // Wrapper for v_dot8_i32_i4 instruction on gfx906
 // Computes dot product of 8 i4 values: vdst = vdst + dot(src0:i4x8, src1:i4x8)
 // Note: Both operands must be packed as i4x8 (8 4-bit signed integers in one int32)
+//
+// OPTIMIZATION OPPORTUNITY: This function is currently UNUSED.
+//
+// FEASIBILITY ANALYSIS:
+//   The v_dot8_i32_i4 instruction requires BOTH operands to be packed as i4x8
+//   (8 4-bit signed integers in one int32). However, current Q4 kernels compute
+//   dot products between Q4 (4-bit) and Q8 (8-bit) values:
+//   - Q4 values (v[]) are already 4-bit, can be packed as i4x8
+//   - Q8 values (u[]) are int8 (8-bit), NOT i4 (4-bit)
+//
+//   To use v_dot8_i32_i4 with Q4 x Q8:
+//   1. Would need to convert/clamp Q8 int8 values to i4 (loses precision/range)
+//   2. Pack converted values into i4x8 format
+//   3. Conversion overhead might outweigh benefit
+//
+//   CONCLUSION: Not practical for Q4 x Q8 dot products. Could be useful for:
+//   - Q4 x Q4 dot products (if such kernels exist)
+//   - Other quantization schemes where both operands are naturally 4-bit
+//
+// Potential usage locations (if Q4 x Q4 kernels existed):
+//   - vec_dot_q4_0_q8_1_impl() in vecdotq.cuh:103-122 (currently Q4 x Q8)
+//   - vec_dot_q4_1_q8_1_impl() in vecdotq.cuh:127-150 (currently Q4 x Q8)
+//   - vec_dot_q2_K_q8_1_impl_mmvq() in vecdotq.cuh:334-359 (currently Q2 x Q8)
+//
+// To track usage: Set GGML_HIP_LOG_CAPABILITIES=1 to see capability utilization report
 static __device__ __forceinline__ int ggml_cuda_dot8_i4(const int a_i4x8, const int b_i4x8, int c) {
 #ifdef V_DOT8_I32_I4_AVAILABLE
     // v_dot8_i32_i4 vdst, src0:i4x8, src1:i4x8, src2:i32 clamp
