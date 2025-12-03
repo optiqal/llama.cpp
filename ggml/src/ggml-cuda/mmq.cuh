@@ -674,8 +674,9 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
         // HBM2-aware prefetching: Prefetch 1 iteration ahead to hide ~300-400 cycle latency
         // Prefetch distance: nrows*nwarps (typically 1-2 iterations ahead)
         // Only prefetch if enabled via GGML_HIP_PREFETCH_ENABLE=1 (experimental)
+        // NOTE: Prefetching is disabled by default due to performance regression
         // Prefetching strategy: Load data into L2 cache while computation continues on current iteration
-        if (i0 + nrows*nwarps < mmq_y) {
+        if (g_prefetch_enabled_device && i0 + nrows*nwarps < mmq_y) {
             const int i_next = (need_check ? min(i0 + nrows*nwarps + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row), i_max) 
                                           : i0 + nrows*nwarps + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row));
             if (i_next < mmq_y) {
@@ -713,7 +714,8 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
 
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
         // Prefetch next iteration's scale data
-        if (i0 + nwarps * rows_per_warp < mmq_y) {
+        // NOTE: Prefetching is disabled by default due to performance regression
+        if (g_prefetch_enabled_device && i0 + nwarps * rows_per_warp < mmq_y) {
             const int i_next = (need_check ? min(i0 + nwarps * rows_per_warp + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row, i_max)
                                           : i0 + nwarps * rows_per_warp + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row);
             if (i_next < mmq_y) {
@@ -783,7 +785,8 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
 
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
         // Prefetch next iteration's data to hide HBM2 latency
-        if (i0 + nrows*nwarps < mmq_y) {
+        // NOTE: Prefetching is disabled by default due to performance regression
+        if (g_prefetch_enabled_device && i0 + nrows*nwarps < mmq_y) {
             const int i_next = (need_check ? min(i0 + nrows*nwarps + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row), i_max)
                                           : i0 + nrows*nwarps + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row));
             if (i_next < mmq_y) {
@@ -822,7 +825,8 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
 
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
         // Prefetch next iteration's scale data
-        if (i0 + nwarps * rows_per_warp < mmq_y) {
+        // NOTE: Prefetching is disabled by default due to performance regression
+        if (g_prefetch_enabled_device && i0 + nwarps * rows_per_warp < mmq_y) {
             const int i_next = (need_check ? min(i0 + nwarps * rows_per_warp + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row, i_max)
                                           : i0 + nwarps * rows_per_warp + threadIdx.y * rows_per_warp + threadIdx.x / blocks_per_tile_x_row);
             if (i_next < mmq_y) {
