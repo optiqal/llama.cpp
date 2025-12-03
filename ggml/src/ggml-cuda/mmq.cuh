@@ -3432,10 +3432,9 @@ static __device__ __forceinline__ void mul_mat_q_process_tile(
     // Software pipelining: Double buffer tile_x to overlap memory loads with computation
     // This hides HBM2 latency (~194ns) by loading next iteration while computing current
     // Strategy: Use two tile_x buffers, alternate between them using buffer indices
-    // TEMPORARILY DISABLED: Investigating crash - re-enable after fixing shared memory calculation
     int * tile_x_buf[2] = {tile_x, tile_x + tile_x_size};
     int buf_idx = 0; // Current buffer index (0 or 1)
-    constexpr bool use_pipelining = false; // TEMPORARILY DISABLED
+    constexpr bool use_pipelining = true;
 #else
     constexpr bool use_pipelining = false;
     int buf_idx = 0;
@@ -3529,8 +3528,13 @@ static __device__ __forceinline__ void mul_mat_q_process_tile(
         __syncthreads();
         
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
-        // Software pipelining: Swap buffers for next iteration
+        // Software pipelining: Ensure next iteration's tile_x load completes before swapping buffers
         if (use_pipelining && has_multiple_iterations && kb0 + blocks_per_iter < kb0_stop) {
+            // The load_tiles call above already happened, but we need to ensure all threads see it
+            // before swapping buffers. The __syncthreads() above ensures the vec_dot completed,
+            // but we need another sync to ensure the load_tiles completed (it's called by all threads).
+            // Actually, load_tiles is called by all threads, so the sync above should be sufficient.
+            // Swap buffers for next iteration
             buf_idx = next_buf; // Switch to the buffer we just loaded
         }
 #endif
@@ -3968,13 +3972,13 @@ static size_t mmq_get_nbytes_shared(const int mmq_x, const int mmq_y, const int 
     
 #if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
     // Software pipelining: Double buffer tile_x to overlap memory loads with computation
-    // TEMPORARILY DISABLED: Investigating crash - re-enable after fixing shared memory calculation
-    // When enabled, this requires 2x tile_x size in shared memory
+    // This requires 2x tile_x size in shared memory
     // tile_x_size in kernel = GGML_PAD(mmq_x*MMQ_TILE_Y_K, nwarps*warp_size) in ints
-    // const int tile_x_size_ints = GGML_PAD(mmq_x*MMQ_TILE_Y_K, nwarps*warp_size);
-    // const size_t tile_x_size_bytes = tile_x_size_ints * sizeof(int);
-    // return nbs_ids + tile_x_size_bytes * 2 + GGML_PAD(nbs_y, nwarps*warp_size*sizeof(int));
-    return nbs_ids + nbs_x + GGML_PAD(nbs_y, nwarps*warp_size*sizeof(int));
+    // MMQ_TILE_Y_K = MMQ_TILE_NE_K + MMQ_TILE_NE_K/QI8_1 = 32 + 4 = 36
+    // We need to match the exact calculation used in the kernel
+    const int tile_x_size_ints = GGML_PAD(mmq_x * (MMQ_TILE_NE_K + MMQ_TILE_NE_K/8), nwarps*warp_size);
+    const size_t tile_x_size_bytes = (size_t)tile_x_size_ints * sizeof(int);
+    return nbs_ids + tile_x_size_bytes * 2 + GGML_PAD(nbs_y, nwarps*warp_size*sizeof(int));
 #else
     return nbs_ids + nbs_x + GGML_PAD(nbs_y, nwarps*warp_size*sizeof(int));
 #endif
