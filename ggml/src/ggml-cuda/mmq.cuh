@@ -330,12 +330,22 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
             i = min(i, i_max);
         }
 
+        // Memory access optimization: same pattern as Q8_0
         const block_q4_0 * bxi = (const block_q4_0 *) x + kbx0 + i*stride + kbxd;
 
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
+        // Use __ldg() for read-only scalar field (d) to improve cache behavior on gfx906
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        x_df[i*MMQ_MMA_TILE_X_K_Q8_0 + kbxd] = __ldg(&bxi->d);
+#else
         x_df[i*MMQ_MMA_TILE_X_K_Q8_0           + kbxd] = bxi->d;
+#endif
+#else
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        x_df[i*(MMQ_TILE_NE_K/QI4_0) + i/QI4_0 + kbxd] = __ldg(&bxi->d);
 #else
         x_df[i*(MMQ_TILE_NE_K/QI4_0) + i/QI4_0 + kbxd] = bxi->d;
+#endif
 #endif // defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
     }
 }
@@ -433,12 +443,22 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
             i = min(i, i_max);
         }
 
+        // Memory access optimization: same pattern as Q8_0
         const block_q4_1 * bxi = (const block_q4_1 *) x + kbx0 + i*stride + kbxd;
 
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
+        // Use __ldg() for read-only half2 field (dm) to improve cache behavior on gfx906
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        x_dm[i*MMQ_MMA_TILE_X_K_Q8_1 + kbxd] = __ldg(&bxi->dm);
+#else
         x_dm[i*MMQ_MMA_TILE_X_K_Q8_1           + kbxd] = bxi->dm;
+#endif
+#else
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        x_dm[i*(MMQ_TILE_NE_K/QI4_1) + i/QI4_1 + kbxd] = __ldg(&bxi->dm);
 #else
         x_dm[i*(MMQ_TILE_NE_K/QI4_1) + i/QI4_1 + kbxd] = bxi->dm;
+#endif
 #endif // defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
     }
 }
@@ -758,6 +778,13 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     }
 }
 
+// Optimized load_tiles_mxfp4 for gfx906: improves memory coalescing and cache behavior
+// Key optimizations:
+// 1. Use __ldg() for read-only data to improve cache behavior on gfx906
+// 2. Ensure within-row access patterns are coalesced (threads with same i, consecutive kbx)
+// 3. Optimize access to qs array and exponent field
+// Note: The stride parameter (e.g., 128 from telemetry) may cause scattered access across rows,
+// but within-row access should be coalesced. Future work: consider data layout reorganization.
 template <int mmq_y, bool need_check> static __device__ __forceinline__ void load_tiles_mxfp4(
     const char * __restrict__ x, int * __restrict__ x_tile, const int kbx0, const int i_max, const int stride) {
     constexpr int nwarps = mmq_get_nwarps_device();
@@ -806,6 +833,11 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
             i = min(i, i_max);
         }
 
+        // Memory access pattern optimization for gfx906:
+        // - Access pattern: bxi = x + kbx0 + i*stride + kbx
+        // - Within a row (same i): threads with consecutive kbx access consecutive blocks (coalesced)
+        // - Across rows (different i): stride may cause scattered access if stride is not optimal
+        // - For gfx906: Use __ldg() for read-only quantized data to improve cache behavior
         const block_mxfp4 * bxi = (const block_mxfp4 *) x + kbx0 + i*stride + kbx;
 
 // Prefetching disabled: Caused ~16% performance regression
@@ -820,7 +852,20 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
         }
 #endif
 
+        // Optimize memory access: use __ldg() for read-only quantized data on gfx906
+        // get_int_b1 reads 4 bytes, so we use __ldg() on the pointer to improve cache behavior
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Use __ldg() when reading from qs array to improve cache behavior and coalescing
+        // Read the 4 bytes needed by get_int_b1 through read-only cache
+        const uint8_t * qs_ptr = &bxi->qs[4*kqsx];
+        const uint8_t qs0 = __ldg(&qs_ptr[0]);
+        const uint8_t qs1 = __ldg(&qs_ptr[1]);
+        const uint8_t qs2 = __ldg(&qs_ptr[2]);
+        const uint8_t qs3 = __ldg(&qs_ptr[3]);
+        const int aux_q4 = (qs0 << 0) | (qs1 << 8) | (qs2 << 16) | (qs3 << 24);
+#else
         const int aux_q4 = get_int_b1(bxi->qs, kqsx);
+#endif
         const int2 v = get_int_from_table_16(aux_q4, kvalues_table);
         const int k0 = kbx * (2 * QI_MXFP4) + kqsx;
 
@@ -845,6 +890,8 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
             i = min(i, i_max);
         }
 
+        // Memory access optimization: same pattern as above
+        // Threads with same i but different kbxd access consecutive blocks (coalesced)
         const block_mxfp4 * bxi = (const block_mxfp4 *) x + kbx0 + i*stride + kbxd;
 
 // Prefetching disabled: Caused ~16% performance regression
@@ -860,9 +907,20 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
 #endif
 
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
+        // Use __ldg() for read-only scalar field (e) to improve cache behavior on gfx906
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        const uint8_t e_val = __ldg(&bxi->e);
+        x_df[i*MMQ_MMA_TILE_X_K_Q8_1 + kbxd] = ggml_cuda_e8m0_to_fp32(e_val)*0.5f;
+#else
         x_df[i*MMQ_MMA_TILE_X_K_Q8_1                 + kbxd] = ggml_cuda_e8m0_to_fp32(bxi->e)*0.5f;
+#endif
+#else
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        const uint8_t e_val = __ldg(&bxi->e);
+        x_df[i*(MMQ_TILE_NE_K/QI_MXFP4) + i/QI_MXFP4 + kbxd] = ggml_cuda_e8m0_to_fp32(e_val)*0.5f;
 #else
         x_df[i*(MMQ_TILE_NE_K/QI_MXFP4) + i/QI_MXFP4 + kbxd] = ggml_cuda_e8m0_to_fp32(bxi->e)*0.5f;
+#endif
 #endif // defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
     }
 }
