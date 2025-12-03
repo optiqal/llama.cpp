@@ -3809,22 +3809,23 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     if (use_cuda_graph) {
         cuda_graph_update_required = is_cuda_graph_update_required(cuda_ctx, cgraph);
 
+        bool use_cuda_graph_before_check = use_cuda_graph;
         use_cuda_graph = check_node_graph_compatibility(cgraph, use_cuda_graph);
 
 #if defined(GGML_USE_HIP)
         static bool hip_graph_usage_logged = false;
-        if (!hip_graph_usage_logged && use_cuda_graph) {
-            if (cuda_ctx->cuda_graph->instance != nullptr) {
-                GGML_LOG_INFO("%s: HIP graphs: using existing graph instance\n", __func__);
-            } else if (cuda_graph_update_required) {
-                GGML_LOG_INFO("%s: HIP graphs: will capture new graph with %d nodes\n", __func__, cgraph->n_nodes);
-            } else {
-                GGML_LOG_INFO("%s: HIP graphs: graph ready, no update required\n", __func__);
+        if (!hip_graph_usage_logged) {
+            if (use_cuda_graph) {
+                if (cuda_ctx->cuda_graph->instance != nullptr) {
+                    GGML_LOG_INFO("%s: HIP graphs: using existing graph instance\n", __func__);
+                } else if (cuda_graph_update_required) {
+                    GGML_LOG_INFO("%s: HIP graphs: will capture new graph with %d nodes\n", __func__, cgraph->n_nodes);
+                } else {
+                    GGML_LOG_INFO("%s: HIP graphs: graph ready, no update required\n", __func__);
+                }
+            } else if (use_cuda_graph_before_check) {
+                GGML_LOG_INFO("%s: HIP graphs: disabled due to node incompatibility (graph has %d nodes)\n", __func__, cgraph->n_nodes);
             }
-            hip_graph_usage_logged = true;
-        }
-        if (!hip_graph_usage_logged && !use_cuda_graph) {
-            GGML_LOG_INFO("%s: HIP graphs: disabled due to node incompatibility\n", __func__);
             hip_graph_usage_logged = true;
         }
 #endif
