@@ -87,10 +87,27 @@ static_assert(sizeof(half) == sizeof(ggml_fp16_t), "wrong fp16 size");
 void ggml_cuda_error(const char * stmt, const char * func, const char * file, int line, const char * msg) {
     int id = -1; // in case cudaGetDevice fails
     (void)cudaGetDevice(&id);
+    
+    // Get device properties for better error reporting (especially for ECC vs non-ECC issues)
+    cudaDeviceProp prop = {};
+    const char * device_name = "unknown";
+    if (id >= 0 && id < GGML_CUDA_MAX_DEVICES) {
+        (void)cudaGetDeviceProperties(&prop, id);
+        device_name = prop.name;
+    }
 
     GGML_LOG_ERROR(GGML_CUDA_NAME " error: %s\n", msg);
-    GGML_LOG_ERROR("  current device: %d, in function %s at %s:%d\n", id, func, file, line);
+    GGML_LOG_ERROR("  current device: %d (%s), in function %s at %s:%d\n", id, device_name, func, file, line);
     GGML_LOG_ERROR("  %s\n", stmt);
+    
+#if defined(GGML_USE_HIP)
+    // For HIP/ROCm, also check for any pending errors that might give more context
+    hipError_t last_err = hipGetLastError();
+    if (last_err != hipSuccess) {
+        GGML_LOG_ERROR("  Additional HIP error detected: %s (code: %d)\n", hipGetErrorString(last_err), (int)last_err);
+    }
+#endif
+    
     // abort with GGML_ABORT to get a stack trace
     GGML_ABORT(GGML_CUDA_NAME " error");
 }
