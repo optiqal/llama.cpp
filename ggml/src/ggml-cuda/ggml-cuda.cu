@@ -238,6 +238,15 @@ static void ggml_cuda_print_capability_report(const ggml_cuda_device_info & info
     }
     
     GGML_LOG_INFO("=== End Capability Report ===\n\n");
+    
+    // Initialize prefetching state from environment variable
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+    const bool prefetch_enabled = ggml_cuda_prefetch_enabled();
+    for (int id = 0; id < info.device_count; ++id) {
+        ggml_cuda_set_device(id);
+        ggml_cuda_set_prefetch_enabled(prefetch_enabled);
+    }
+#endif // defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
 #endif // defined(GGML_USE_HIP)
 }
 
@@ -2391,6 +2400,9 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
         static int total_calls = 0;
         static int logged_calls = 0;
         
+        // Timing for HBM2 bottleneck analysis (measure dispatch overhead)
+        const auto timing_start = std::chrono::high_resolution_clock::now();
+        
         std::lock_guard<std::mutex> lock(stats_mutex);
         total_calls++;
         const int current_call = total_calls;
@@ -2398,9 +2410,6 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
         if (should_log) {
             logged_calls++;
         }
-        
-        // Timing for HBM2 bottleneck analysis
-        const auto timing_start = std::chrono::high_resolution_clock::now();
         
         // Determine kernel name (always, not just for logging)
         const char * kernel_name = nullptr;

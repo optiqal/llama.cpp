@@ -118,15 +118,31 @@ From benchmark logs:
 GGML_HIP_PREFETCH_ENABLE=1 GGML_HIP_LOG_PERFORMANCE=1 llama-bench -m model.gguf
 ```
 
+**Benchmark Results (gpt-oss 120B MXFP4 MoE, 2x gfx906):**
+
+| Configuration | pp512 (tokens/s) | tg128 (tokens/s) | Change |
+|---------------|------------------|-------------------|--------|
+| **Without Prefetch** | 652.58 ± 23.78 | 73.96 ± 0.08 | Baseline |
+| **With Prefetch** | 638.69 ± 18.84 | 71.40 ± 0.07 | **-2.1% / -3.5%** |
+
+**Analysis:**
+- Prefetching causes **~2-3% regression** in both prompt processing and token generation
+- The volatile load overhead exceeds the benefit of hiding HBM2 latency
+- Possible causes:
+  1. **Cache Pollution**: Prefetched data evicts useful cache lines
+  2. **Load Overhead**: Volatile load blocks execution even when data is cached
+  3. **Wrong Prefetch Distance**: 1 iteration ahead may not be enough for ~300-400 cycle latency
+  4. **Memory Conflicts**: Prefetching interferes with actual memory access patterns
+
 **Monitor:**
 - Performance metrics (pp512, tg128)
-- HBM2 bottleneck analysis output
+- HBM2 bottleneck analysis output (appears after 1000 calls)
 - Cache utilization metrics
 - Memory latency warnings
 
 **Expected Behavior:**
 - If prefetching helps: Reduced memory latency warnings, improved throughput
-- If prefetching hurts: Performance regression, increased cache pressure warnings
+- If prefetching hurts: Performance regression (as observed), increased cache pressure warnings
 
 ## Next Steps
 

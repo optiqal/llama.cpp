@@ -330,13 +330,37 @@ static bool ggml_cuda_prefetch_enabled() {
     return enabled;
 }
 
+// Device-side constant memory to control prefetching
+// This is set from host code during initialization
+// Using __constant__ allows efficient access from device code
+__constant__ bool g_prefetch_enabled_device;
+
+// Host function to set prefetching state (called during initialization)
+static void ggml_cuda_set_prefetch_enabled(bool enabled) {
+    // Copy the prefetch enabled flag to device constant memory
+    // Note: For multi-GPU, this sets the flag for the current device
+    bool host_flag = enabled;
+    CUDA_CHECK(cudaMemcpyToSymbol(g_prefetch_enabled_device, &host_flag, sizeof(bool)));
+}
+
 static __device__ __forceinline__ void ggml_cuda_prefetch_hbm2(const void * addr) {
+    // Only prefetch if enabled via runtime flag
+    // The volatile load has overhead, so we skip it when prefetching is disabled
+    // Using __constant__ memory for efficient access (cached, no global memory access)
+    if (!g_prefetch_enabled_device) {
+        return; // Early return to avoid volatile load overhead
+    }
+    
     // Software prefetching: Issue a controlled load to bring data into L2 cache
     // Strategy: Load into a register that won't be used immediately, allowing
     // the memory controller to prefetch into L2 cache while computation continues
     // 
     // HBM2 latency: ~300-400 cycles = ~167-222ns at 1.8GHz
     // Prefetch distance: Load 1-2 iterations ahead to hide this latency
+    // 
+    // INVESTIGATION: Volatile load may cause overhead even when data is cached.
+    // Consider: Using __builtin_prefetch with proper locality hints, or
+    // implementing software pipelining instead of explicit prefetching.
     volatile const char * prefetch_ptr = (volatile const char *)addr;
     // Issue a read that brings data into cache but doesn't block computation
     // Using volatile ensures the load isn't optimized away
@@ -347,6 +371,9 @@ static __device__ __forceinline__ void ggml_cuda_prefetch_hbm2(const void * addr
 static __device__ __forceinline__ void ggml_cuda_prefetch_hbm2(const void * addr) {
     // No-op for non-gfx906 or when optimization disabled
     GGML_UNUSED(addr);
+}
+static void ggml_cuda_set_prefetch_enabled(bool enabled) {
+    GGML_UNUSED(enabled);
 }
 #endif // defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
 
