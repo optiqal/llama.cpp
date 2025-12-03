@@ -611,8 +611,8 @@ bool llama_kv_cache::update(llama_context * lctx, bool do_shift, const stream_co
     if (!sc_info.empty()) {
         assert(n_stream > 1 && "stream copy should never happen with a single stream");
 
-        llama_synchronize(lctx);
-
+        // Use async tensor copies instead of synchronizing - this allows GPU operations
+        // to continue while KV cache copies are queued, improving throughput
         const size_t n_copy = sc_info.ssrc.size();
 
         for (size_t i = 0; i < n_copy; ++i) {
@@ -622,15 +622,31 @@ bool llama_kv_cache::update(llama_context * lctx, bool do_shift, const stream_co
             assert(ssrc < n_stream);
             assert(sdst < n_stream);
 
-            LLAMA_LOG_DEBUG("%s: copying KV buffer: stream %d to stream %d\n", __func__, ssrc, sdst);
+            LLAMA_LOG_DEBUG("%s: copying KV buffer: stream %d to stream %d (async)\n", __func__, ssrc, sdst);
 
             assert(ssrc != sdst);
 
             for (uint32_t il = 0; il < layers.size(); ++il) {
                 const auto & layer = layers[il];
 
-                ggml_backend_tensor_copy(layer.k_stream[ssrc], layer.k_stream[sdst]);
-                ggml_backend_tensor_copy(layer.v_stream[ssrc], layer.v_stream[sdst]);
+                // Get backends for source and destination tensors
+                ggml_backend_t backend_src_k = ggml_backend_sched_get_tensor_backend(sched, layer.k_stream[ssrc]);
+                ggml_backend_t backend_dst_k = ggml_backend_sched_get_tensor_backend(sched, layer.k_stream[sdst]);
+                ggml_backend_t backend_src_v = ggml_backend_sched_get_tensor_backend(sched, layer.v_stream[ssrc]);
+                ggml_backend_t backend_dst_v = ggml_backend_sched_get_tensor_backend(sched, layer.v_stream[sdst]);
+
+                // Use async copy if backends are available, fall back to sync copy otherwise
+                if (backend_src_k && backend_dst_k) {
+                    ggml_backend_tensor_copy_async(backend_src_k, backend_dst_k, layer.k_stream[ssrc], layer.k_stream[sdst]);
+                } else {
+                    ggml_backend_tensor_copy(layer.k_stream[ssrc], layer.k_stream[sdst]);
+                }
+
+                if (backend_src_v && backend_dst_v) {
+                    ggml_backend_tensor_copy_async(backend_src_v, backend_dst_v, layer.v_stream[ssrc], layer.v_stream[sdst]);
+                } else {
+                    ggml_backend_tensor_copy(layer.v_stream[ssrc], layer.v_stream[sdst]);
+                }
             }
         }
     }

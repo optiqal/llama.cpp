@@ -428,7 +428,11 @@ llama_context::~llama_context() {
 }
 
 void llama_context::synchronize() {
-    ggml_backend_sched_synchronize(sched.get());
+    // Optimize: skip backend synchronization if there are no pending operations
+    // This avoids redundant synchronizations when called multiple times
+    if (n_queued_tokens > 0) {
+        ggml_backend_sched_synchronize(sched.get());
+    }
 
     // FIXME: if multiple single tokens are evaluated without a synchronization,
     // the stats will be added to the prompt evaluation stats
@@ -1104,6 +1108,10 @@ int llama_context::decode(const llama_batch & batch_inp) {
 
     int64_t n_outputs_prev = 0;
 
+    // Process ubatches sequentially, but optimize for pipelining:
+    // - Launch async computation for each ubatch
+    // - Immediately queue all tensor_get operations (async) after launching computation
+    // - This allows GPU/compute to overlap work across ubatches
     do {
         const auto & ubatch = mctx->get_ubatch();
 
@@ -1123,6 +1131,7 @@ int llama_context::decode(const llama_batch & batch_inp) {
             n_outputs = n_outputs_new;
         }
 
+        // Launch async computation for this ubatch (returns immediately, computation continues in background)
         ggml_status status;
         const auto * res = process_ubatch(ubatch, LLM_GRAPH_TYPE_DECODER, mctx.get(), status);
 
@@ -1162,15 +1171,15 @@ int llama_context::decode(const llama_batch & batch_inp) {
         //    ggml_graph_dump_dot(gf, NULL, "llama.dot");
         //}
 
+        // Immediately queue all tensor_get operations for this ubatch (async)
+        // This allows the next ubatch's computation to start while tensor copies are queued
+        // All operations are queued together before moving to next ubatch for better batching
         auto * t_logits = res->get_logits();
         auto * t_embd   = cparams.embeddings ? res->get_embd() : nullptr;
 
         if (t_embd && res->get_embd_pooled()) {
             t_embd = res->get_embd_pooled();
         }
-
-        // Batch all tensor_get operations for this ubatch together to reduce overhead
-        // and allow better GPU utilization. All operations are queued before moving to next ubatch.
         
         // extract logits
         if (t_logits && n_outputs > 0) {
