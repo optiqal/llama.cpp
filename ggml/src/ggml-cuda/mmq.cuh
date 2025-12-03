@@ -588,9 +588,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
         const block_q5_0 * bxi = (const block_q5_0 *) x + kbx0 + i*stride + kbxd;
 
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Use __ldg() for read-only scalar field (d) to improve cache behavior on gfx906
+        x_df[i*MMQ_MMA_TILE_X_K_Q8_0           + kbxd] = __ldg(&bxi->d);
+#else
         x_df[i*MMQ_MMA_TILE_X_K_Q8_0           + kbxd] = bxi->d;
+#endif
+#else
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Use __ldg() for read-only scalar field (d) to improve cache behavior on gfx906
+        x_df[i*(MMQ_TILE_NE_K/QI5_0) + i/QI5_0 + kbxd] = __ldg(&bxi->d);
 #else
         x_df[i*(MMQ_TILE_NE_K/QI5_0) + i/QI5_0 + kbxd] = bxi->d;
+#endif
 #endif // defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE)  || defined(AMD_WMMA_AVAILABLE)
     }
 }
@@ -668,9 +678,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
         const block_q5_1 * bxi = (const block_q5_1 *) x + kbx0 + i*stride + kbxd;
 
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Use __ldg() for read-only half2 field (dm) to improve cache behavior on gfx906
+        x_dm[i*MMQ_MMA_TILE_X_K_Q8_1           + kbxd] = __ldg(&bxi->dm);
+#else
         x_dm[i*MMQ_MMA_TILE_X_K_Q8_1           + kbxd] = bxi->dm;
+#endif
+#else
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Use __ldg() for read-only half2 field (dm) to improve cache behavior on gfx906
+        x_dm[i*(MMQ_TILE_NE_K/QI5_1) + i/QI5_1 + kbxd] = __ldg(&bxi->dm);
 #else
         x_dm[i*(MMQ_TILE_NE_K/QI5_1) + i/QI5_1 + kbxd] = bxi->dm;
+#endif
 #endif // defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
     }
 }
@@ -1546,10 +1566,23 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
 
         const int sc_m = bxi->scales[kqsx];
 #ifdef FAST_FP16_AVAILABLE
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Use __ldg() for read-only half2 field (dm) to improve cache behavior on gfx906
+        const half2 dm_val = __ldg(&bxi->dm);
+        const half2 x_dm_ik = __hmul2(dm_val, make_half2(sc_m & 0x0F, sc_m >> 4));
+#else
         const half2 x_dm_ik = __hmul2(bxi->dm, make_half2(sc_m & 0x0F, sc_m >> 4));
+#endif
+#else
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Use __ldg() for read-only half2 field (dm) to improve cache behavior on gfx906
+        const half2 dm_val = __ldg(&bxi->dm);
+        const float2 bxi_dmf = __half22float2(dm_val);
+        const half2 x_dm_ik = make_half2(bxi_dmf.x*(sc_m & 0x0F), bxi_dmf.y*(sc_m >> 4));
 #else
         const float2 bxi_dmf = __half22float2(bxi->dm);
         const half2 x_dm_ik = make_half2(bxi_dmf.x*(sc_m & 0x0F), bxi_dmf.y*(sc_m >> 4));
+#endif
 #endif // FAST_FP16_AVAILABLE
 
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
@@ -1963,7 +1996,12 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
 
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
         const int8_t * sc8 = (const int8_t *) &sc;
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Use __ldg() for read-only scalar field (d) to improve cache behavior on gfx906
+        const float d = __ldg(&bxi->d);
+#else
         const float d = bxi->d;
+#endif
 
 #pragma unroll
         for (int l = 0; l < int(sizeof(int)); ++l) {
@@ -1987,7 +2025,12 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
 
         const block_q3_K * bxi = (const block_q3_K *) x + kbx0 + i*stride;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Use __ldg() for read-only scalar field (d) to improve cache behavior on gfx906
+        x_df[i] = __ldg(&bxi->d);
+#else
         x_df[i] = bxi->d;
+#endif
     }
 #endif // !(defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE)) || defined(AMD_WMMA_AVAILABLE)
 }
@@ -2106,7 +2149,12 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
             const uint8_t * sc8 = (const uint8_t *) &sc32;
             const uint8_t *  m8 = (const uint8_t *)  &m32;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+            // Use __ldg() for read-only half2 field (dm) to improve cache behavior on gfx906
+            const half2 dm = __ldg(&bxi->dm) * make_half2(1.0f, -1.0f);
+#else
             const half2 dm = bxi->dm * make_half2(1.0f, -1.0f);
+#endif
 
     #pragma unroll
             for (int l = 0; l < sizeof(int); ++l) {
@@ -2127,7 +2175,12 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
 
         const block_q4_K * bxi = (const block_q4_K *) x + kbx0 + i*stride;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Use __ldg() for read-only half2 field (dm) to improve cache behavior on gfx906
+        x_dm[i] = __ldg(&bxi->dm);
+#else
         x_dm[i] = bxi->dm;
+#endif
     }
     constexpr int rows_per_warp = warp_size / 4;
 #pragma unroll
@@ -2268,7 +2321,12 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
             const uint8_t * sc8 = (const uint8_t *) &sc32;
             const uint8_t *  m8 = (const uint8_t *)  &m32;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+            // Use __ldg() for read-only half2 field (dm) to improve cache behavior on gfx906
+            const half2 dm = __ldg(&bxi->dm) * make_half2(1.0f, -1.0f);
+#else
             const half2 dm = bxi->dm * make_half2(1.0f, -1.0f);
+#endif
 
 #pragma unroll
             for (int l = 0; l < int(sizeof(int)); ++l) {
@@ -2289,7 +2347,12 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
 
         const block_q5_K * bxi = (const block_q5_K *) x + kbx0 + i*stride;
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Use __ldg() for read-only half2 field (dm) to improve cache behavior on gfx906
+        x_dm[i] = __ldg(&bxi->dm);
+#else
         x_dm[i] = bxi->dm;
+#endif
     }
 
     constexpr int rows_per_warp = warp_size / 4;
@@ -2415,9 +2478,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
         const block_q6_K * bxi = (const block_q6_K *) x + kbx0 + i*stride;
 
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Use __ldg() for read-only scalar field (d) to improve cache behavior on gfx906
+        x_df[i*MMQ_MMA_TILE_X_K_Q6_K]           = __ldg(&bxi->d);
+#else
         x_df[i*MMQ_MMA_TILE_X_K_Q6_K]           = bxi->d;
+#endif
+#else
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        // Use __ldg() for read-only scalar field (d) to improve cache behavior on gfx906
+        x_df[i*(MMQ_TILE_NE_K/QI6_K) + i/QI6_K] = __ldg(&bxi->d);
 #else
         x_df[i*(MMQ_TILE_NE_K/QI6_K) + i/QI6_K] = bxi->d;
+#endif
 #endif // defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
     }
 
@@ -4218,15 +4291,30 @@ void mul_mat_q_case(ggml_backend_cuda_context & ctx, const mmq_args & args, cuda
         const size_t tile_x_bytes = (txs.qs * sizeof(int) + txs.dm * sizeof(half2) + txs.sc * sizeof(int));
         const size_t tile_y_bytes = mmq_x_best * sizeof(block_q8_1_mmq);
         
-        // Estimate memory accessed per iteration (tile data + some overhead)
-        const size_t mem_per_iteration = tile_x_bytes + tile_y_bytes + (mmq_x_best * mmq_y * sizeof(float)); // Output tile
+        // Improved cache locality accounting:
+        // - tile_x is loaded once per K iteration and reused across multiple tile_y loads
+        // - tile_y is loaded per iteration (may be evicted between iterations)
+        // - Output tile (sum) is accumulated in registers/shared memory
+        // - Account for temporal locality: tile_x stays in cache across tile_y iterations
+        const size_t output_tile_bytes = mmq_x_best * mmq_y * sizeof(float);
         
-        // If current tile size causes cache misses, try to find a better balance
-        // Prefer tile sizes that keep working set closer to L2 cache size
-        if (mem_per_iteration > l2_cache_size * 0.5) { // >50% of L2 cache per iteration
+        // Working set per iteration: tile_y (new) + output (accumulated)
+        // tile_x is amortized across multiple tile_y loads, so count it with reduced weight
+        // For MMQ kernels, tile_x is typically reused 2-4 times per K iteration
+        const int estimated_tile_x_reuse = 2; // Conservative estimate
+        const size_t effective_tile_x_bytes = tile_x_bytes / estimated_tile_x_reuse;
+        const size_t mem_per_iteration = effective_tile_x_bytes + tile_y_bytes + output_tile_bytes;
+        
+        // More aggressive cache optimization: optimize if >30% of L2 cache (was 50%)
+        // This catches more cases where cache locality can be improved
+        if (mem_per_iteration > l2_cache_size * 0.3) {
             // Try to find a tile size that better fits in L2 cache while maintaining performance
             int mmq_x_cache_opt = mmq_x_best;
             double best_cache_score = (double)mem_per_iteration / l2_cache_size; // Lower is better
+            
+            // Consider tile sizes that may increase iterations slightly more (up to 15% instead of 10%)
+            // if they significantly improve cache locality
+            const double max_iteration_increase = mem_per_iteration > l2_cache_size * 0.6 ? 1.15 : 1.10;
             
             for (int mmq_x = 8; mmq_x <= mmq_x_max; mmq_x += 8) {
                 const int granularity = mmq_get_granularity_host(mmq_x, cc);
@@ -4235,24 +4323,36 @@ void mul_mat_q_case(ggml_backend_cuda_context & ctx, const mmq_args & args, cuda
                 }
                 
                 const int ntiles_x = (args.ncols_max + mmq_x - 1) / mmq_x;
-                // Only consider if it doesn't significantly increase iterations (within 10%)
-                if (ntiles_x > ntiles_x_best * 1.1) {
+                // Allow more iteration increase for high cache pressure scenarios
+                if (ntiles_x > ntiles_x_best * max_iteration_increase) {
                     continue;
                 }
                 
                 const size_t tile_y_bytes_test = mmq_x * sizeof(block_q8_1_mmq);
-                const size_t mem_per_iteration_test = tile_x_bytes + tile_y_bytes_test + (mmq_x * mmq_y * sizeof(float));
+                const size_t output_tile_bytes_test = mmq_x * mmq_y * sizeof(float);
+                const size_t mem_per_iteration_test = effective_tile_x_bytes + tile_y_bytes_test + output_tile_bytes_test;
                 const double cache_score = (double)mem_per_iteration_test / l2_cache_size;
                 
-                // Prefer tile sizes that fit better in L2 cache and don't increase iterations too much
-                if (cache_score < best_cache_score && ntiles_x <= ntiles_x_best * 1.05) {
-                    mmq_x_cache_opt = mmq_x;
-                    best_cache_score = cache_score;
+                // Prefer tile sizes that fit better in L2 cache
+                // More aggressive: accept if cache score is better, even with slight iteration increase
+                const double iteration_penalty = ntiles_x > ntiles_x_best ? 
+                    (double)ntiles_x / ntiles_x_best : 1.0;
+                const double weighted_score = cache_score * iteration_penalty;
+                
+                if (weighted_score < best_cache_score * 1.05) { // Allow 5% tolerance for iteration increase
+                    // Prefer smaller cache score, but also prefer fewer iterations if cache score is similar
+                    if (cache_score < best_cache_score || 
+                        (cache_score < best_cache_score * 1.1 && ntiles_x <= ntiles_x_best)) {
+                        mmq_x_cache_opt = mmq_x;
+                        best_cache_score = cache_score;
+                    }
                 }
             }
             
-            // Use cache-optimized tile size if it's better
-            if (mmq_x_cache_opt != mmq_x_best && best_cache_score < 0.8) { // Only if significantly better cache fit
+            // Use cache-optimized tile size if it's significantly better
+            // Lower threshold: apply if cache score < 0.75 (was 0.8) for high cache pressure
+            const double cache_threshold = mem_per_iteration > l2_cache_size * 0.6 ? 0.70 : 0.75;
+            if (mmq_x_cache_opt != mmq_x_best && best_cache_score < cache_threshold) {
                 mmq_x_best = mmq_x_cache_opt;
                 ntiles_x_best = (args.ncols_max + mmq_x_best - 1) / mmq_x_best;
             }
@@ -4321,14 +4421,19 @@ void mul_mat_q_case(ggml_backend_cuda_context & ctx, const mmq_args & args, cuda
             const tile_x_sizes txs = mmq_get_dp4a_tile_x_sizes(type, mmq_y);
             const size_t tile_x_bytes = (txs.qs * sizeof(int) + txs.dm * sizeof(half2) + txs.sc * sizeof(int));
             const size_t tile_y_bytes = mmq_x_best * sizeof(block_q8_1_mmq);
-            const size_t mem_per_iteration = tile_x_bytes + tile_y_bytes + (mmq_x_best * mmq_y * sizeof(float));
+            
+            // Improved cache accounting: account for tile_x reuse across iterations
+            const int estimated_tile_x_reuse = 2; // Conservative estimate
+            const size_t effective_tile_x_bytes = tile_x_bytes / estimated_tile_x_reuse;
+            const size_t output_tile_bytes = mmq_x_best * mmq_y * sizeof(float);
+            const size_t mem_per_iteration = effective_tile_x_bytes + tile_y_bytes + output_tile_bytes;
             const double cache_utilization = (double)mem_per_iteration / l2_cache_size * 100.0;
             
             // Reduced verbosity: Only log high cache pressure (first 2 calls)
             static int cache_log_count = 0;
-            if (cache_utilization >= 80.0 && cache_log_count++ < 2) {
-                fprintf(stderr, "  ⚠️  Cache: Working set (%.2f KB) uses %.1f%% of L2 cache\n",
-                    mem_per_iteration / 1024.0, cache_utilization);
+            if (cache_utilization >= 60.0 && cache_log_count++ < 2) { // Lower threshold: 60% (was 80%)
+                fprintf(stderr, "  ⚠️  Cache: Working set (%.2f KB, effective) uses %.1f%% of L2 cache (tile_x reused %dx)\n",
+                    mem_per_iteration / 1024.0, cache_utilization, estimated_tile_x_reuse);
                 fflush(stderr);
             }
             fflush(stderr);
