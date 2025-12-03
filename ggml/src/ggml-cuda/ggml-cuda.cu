@@ -2535,9 +2535,11 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
                 }
             }
             
-            // Actual dimensions from logs: src0->ne[0]=2880, src0->ne[1]=128, src1->ne[1]=512
+            // Actual dimensions from logs: src0->ne[0]=2880, src0->ne[1]=128, src1->ne[1]=512 (or larger)
             // This is C = src0^T * src1 where src0 is 2880x128 (transposed) and src1 is 128xN
-            if (src0->ne[0] == 2880 && src0->ne[1] == 128 && src1->ne[1] <= 512) {
+            // Support batch sizes up to 2048 for prompt processing (typical: 512, 1024, 2048)
+            // Token generation typically uses smaller batches (128), but kernel handles both
+            if (src0->ne[0] == 2880 && src0->ne[1] == 128 && src1->ne[1] <= 2048) {
                 // Use custom gfx906 kernel for attention operations
                 // Operation: C = src0^T * src1 (matching cuBLAS CUBLAS_OP_T behavior)
                 GGML_TENSOR_BINARY_OP_LOCALS
