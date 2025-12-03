@@ -3661,12 +3661,12 @@ static void evaluate_and_capture_cuda_graph(ggml_backend_cuda_context * cuda_ctx
                 cuda_ctx->cuda_graph->graph = nullptr;
             }
 
-#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+#if defined(GGML_USE_HIP)
             static const bool profile_hip_graphs = (getenv("GGML_HIP_PROFILE_GRAPHS") != nullptr);
             if (profile_hip_graphs) {
                 auto capture_end = std::chrono::high_resolution_clock::now();
                 double capture_time_ms = std::chrono::duration<double, std::milli>(capture_end - cuda_ctx->cuda_graph->capture_start_time).count();
-                GGML_LOG_DEBUG("%s: HIP graph capture took %.3f ms\n", __func__, capture_time_ms);
+                GGML_LOG_INFO("%s: HIP graph capture took %.3f ms\n", __func__, capture_time_ms);
             }
 #endif
 
@@ -3684,44 +3684,44 @@ static void evaluate_and_capture_cuda_graph(ggml_backend_cuda_context * cuda_ctx
 
     if (use_cuda_graph) {
         if (cuda_ctx->cuda_graph->instance == nullptr) { // Create executable graph from captured graph.
-#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+#if defined(GGML_USE_HIP)
             static const bool profile_hip_graphs = (getenv("GGML_HIP_PROFILE_GRAPHS") != nullptr);
             auto instantiate_start = profile_hip_graphs ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
 #endif
             CUDA_CHECK(cudaGraphInstantiate(&cuda_ctx->cuda_graph->instance, cuda_ctx->cuda_graph->graph, NULL, NULL, 0));
-#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+#if defined(GGML_USE_HIP)
             if (profile_hip_graphs) {
                 auto instantiate_end = std::chrono::high_resolution_clock::now();
                 double instantiate_time_ms = std::chrono::duration<double, std::milli>(instantiate_end - instantiate_start).count();
-                GGML_LOG_DEBUG("%s: HIP graph instantiation took %.3f ms\n", __func__, instantiate_time_ms);
+                GGML_LOG_INFO("%s: HIP graph instantiation took %.3f ms\n", __func__, instantiate_time_ms);
             }
 #endif
         }
         if (cuda_graph_update_required) { // Update graph executable
-#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+#if defined(GGML_USE_HIP)
             static const bool profile_hip_graphs = (getenv("GGML_HIP_PROFILE_GRAPHS") != nullptr);
             auto update_start = profile_hip_graphs ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
 #endif
             update_cuda_graph_executable(cuda_ctx);
-#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+#if defined(GGML_USE_HIP)
             if (profile_hip_graphs) {
                 auto update_end = std::chrono::high_resolution_clock::now();
                 double update_time_ms = std::chrono::duration<double, std::milli>(update_end - update_start).count();
-                GGML_LOG_DEBUG("%s: HIP graph update took %.3f ms\n", __func__, update_time_ms);
+                GGML_LOG_INFO("%s: HIP graph update took %.3f ms\n", __func__, update_time_ms);
             }
 #endif
         }
         // Launch graph
-#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+#if defined(GGML_USE_HIP)
         static const bool profile_hip_graphs = (getenv("GGML_HIP_PROFILE_GRAPHS") != nullptr);
         auto launch_start = profile_hip_graphs ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
 #endif
         CUDA_CHECK(cudaGraphLaunch(cuda_ctx->cuda_graph->instance, cuda_ctx->stream()));
-#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+#if defined(GGML_USE_HIP)
         if (profile_hip_graphs) {
             auto launch_end = std::chrono::high_resolution_clock::now();
             double launch_time_ms = std::chrono::duration<double, std::milli>(launch_end - launch_start).count();
-            GGML_LOG_DEBUG("%s: HIP graph launch took %.3f ms\n", __func__, launch_time_ms);
+            GGML_LOG_INFO("%s: HIP graph launch took %.3f ms\n", __func__, launch_time_ms);
         }
 #endif
 #else
@@ -3770,6 +3770,21 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
         || cuda_ctx->cuda_graph->disable_due_to_too_many_updates
         || cuda_ctx->cuda_graph->disable_due_to_failed_graph_capture) {
         use_cuda_graph = false;
+#if defined(GGML_USE_HIP)
+        static bool hip_graph_disabled_logged = false;
+        if (!hip_graph_disabled_logged) {
+            if (disable_cuda_graphs_due_to_env) {
+                GGML_LOG_INFO("%s: HIP graphs disabled via GGML_CUDA_DISABLE_GRAPHS environment variable\n", __func__);
+            } else if (cuda_ctx->cuda_graph->disable_due_to_gpu_arch) {
+                GGML_LOG_INFO("%s: HIP graphs disabled due to GPU architecture\n", __func__);
+            } else if (cuda_ctx->cuda_graph->disable_due_to_too_many_updates) {
+                GGML_LOG_INFO("%s: HIP graphs disabled due to too many consecutive updates\n", __func__);
+            } else if (cuda_ctx->cuda_graph->disable_due_to_failed_graph_capture) {
+                GGML_LOG_INFO("%s: HIP graphs disabled due to previous capture failure\n", __func__);
+            }
+            hip_graph_disabled_logged = true;
+        }
+#endif
     }
 
     if (use_cuda_graph) {
@@ -3811,10 +3826,15 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
             ggml_cuda_lock_counter.fetch_add(1, std::memory_order_relaxed);
         }
 
-#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+#if defined(GGML_USE_HIP)
         static const bool profile_hip_graphs = (getenv("GGML_HIP_PROFILE_GRAPHS") != nullptr);
         if (profile_hip_graphs) {
             cuda_ctx->cuda_graph->capture_start_time = std::chrono::high_resolution_clock::now();
+        }
+        static bool hip_graph_logged = false;
+        if (!hip_graph_logged) {
+            GGML_LOG_INFO("%s: HIP graphs enabled, capturing graph with %d nodes\n", __func__, cgraph->n_nodes);
+            hip_graph_logged = true;
         }
 #endif
 
