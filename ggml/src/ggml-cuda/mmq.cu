@@ -386,7 +386,7 @@ bool ggml_cuda_should_use_mmq(enum ggml_type type, int cc, int64_t ne11) {
                 case GGML_TYPE_Q5_K: type_str = "Q5_K"; break;
                 default: break;
             }
-            GGML_LOG_DEBUG("gfx906 MMQ decision: type=%s ne11=%ld -> %s (%s)\n", 
+            GGML_LOG_INFO("gfx906 MMQ decision: type=%s ne11=%ld -> %s (%s)\n", 
                           type_str, (long)ne11, use_mmq ? "MMQ" : "rocBLAS", reason);
         }
         
