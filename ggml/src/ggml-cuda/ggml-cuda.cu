@@ -2367,9 +2367,17 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
     bool use_batched_cublas_f32  = src0->type == GGML_TYPE_F32;
 
     // Performance logging
-    if (log_performance && call_count++ < 100) { // Log first 100 calls to avoid spam
-        const char * kernel_name = nullptr;
-        const char * reason = nullptr;
+    if (log_performance) {
+        static std::mutex stats_mutex;
+        static std::map<std::string, int> global_kernel_stats;
+        static int total_calls = 0;
+        
+        std::lock_guard<std::mutex> lock(stats_mutex);
+        total_calls++;
+        
+        if (call_count++ < 100) { // Log first 100 calls to avoid spam
+            const char * kernel_name = nullptr;
+            const char * reason = nullptr;
         if (!split && use_mul_mat_vec_f) {
             kernel_name = "mul_mat_vec_f";
             reason = "F32/F16 vector kernel (non-split)";
@@ -2402,9 +2410,14 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
         
         if (kernel_name) {
             kernel_usage_stats[kernel_name]++;
+            const int64_t total_elements = src0->ne[0] * src0->ne[1] * src1->ne[1];
+            const double gb_per_op = (double)total_elements * sizeof(float) / (1024.0 * 1024.0 * 1024.0);
+            
             GGML_LOG_INFO("ggml_cuda_mul_mat[%d]: type=%s ne11=%ld ne0=%ld ne1=%ld -> %s (%s)\n",
                 call_count, ggml_type_name(src0->type), (long)src1->ne[1], (long)src0->ne[0], (long)src0->ne[1],
                 kernel_name, reason);
+            GGML_LOG_INFO("  Data size: %.2f GB, split=%d, bad_padding=%d\n",
+                gb_per_op, split ? 1 : 0, bad_padding_clear ? 1 : 0);
             
             // Log optimization opportunities
             if (ggml_is_quantized(src0->type) && src1->ne[1] > MMVQ_MAX_BATCH_SIZE && !use_mul_mat_q) {
@@ -2414,6 +2427,30 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
             if (bad_padding_clear && ggml_is_quantized(src0->type)) {
                 GGML_LOG_INFO("  ⚠️  Optimization: bad_padding_clear=true, falling back to cuBLAS (consider padding fix)\n");
             }
+            // Log batch size analysis
+            if (ggml_is_quantized(src0->type)) {
+                if (src1->ne[1] <= 128) {
+                    GGML_LOG_INFO("  ℹ️  Batch size analysis: ne11=%ld is optimal for MMVQ (≤128)\n", (long)src1->ne[1]);
+                } else if (src1->ne[1] <= 512) {
+                    GGML_LOG_INFO("  ℹ️  Batch size analysis: ne11=%ld may benefit from MMQ (128-512 range)\n", (long)src1->ne[1]);
+                } else {
+                    GGML_LOG_INFO("  ℹ️  Batch size analysis: ne11=%ld is large batch, MMQ or cuBLAS preferred\n", (long)src1->ne[1]);
+                }
+            }
+        }
+        
+        // Update global stats
+        if (kernel_name) {
+            global_kernel_stats[kernel_name]++;
+        }
+        
+        // Print summary every 1000 calls
+        if (total_calls % 1000 == 0 && total_calls > 0) {
+            GGML_LOG_INFO("\n=== Kernel Usage Summary (after %d calls) ===\n", total_calls);
+            for (const auto & [name, count] : global_kernel_stats) {
+                GGML_LOG_INFO("  %s: %d calls (%.1f%%)\n", name.c_str(), count, 100.0 * count / total_calls);
+            }
+            GGML_LOG_INFO("==========================================\n\n");
         }
     }
 

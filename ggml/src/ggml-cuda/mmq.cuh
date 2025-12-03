@@ -3893,9 +3893,15 @@ void mul_mat_q_case(ggml_backend_cuda_context & ctx, const mmq_args & args, cuda
     if (log_performance && mmq_call_count++ < 50) {
         const size_t shared_mem = mmq_get_nbytes_shared<type>(mmq_x_best, mmq_y, cc, warp_size, nwarps);
         const char * type_str = ggml_type_name(type);
-        GGML_LOG_INFO("mul_mat_q_case[%d]: type=%s ncols_max=%ld nrows_x=%ld -> mmq_x=%d mmq_y=%d shared_mem=%zu/%zu bytes (%.1f%%)\n",
-            mmq_call_count, type_str ? type_str : "unknown", (long)args.ncols_max, (long)args.nrows_x,
-            mmq_x_best, mmq_y, shared_mem, smpbo, 100.0 * shared_mem / smpbo);
+        const int64_t total_elements = args.ncols_max * args.nrows_x;
+        const int64_t estimated_iterations = (args.ncols_max + mmq_x_best - 1) / mmq_x_best;
+        
+        GGML_LOG_INFO("mul_mat_q_case[%d]: type=%s ncols_max=%ld nrows_x=%ld ncols_y=%ld -> mmq_x=%d mmq_y=%d\n",
+            mmq_call_count, type_str ? type_str : "unknown", (long)args.ncols_max, (long)args.nrows_x, (long)args.ncols_y,
+            mmq_x_best, mmq_y);
+        GGML_LOG_INFO("  Shared memory: %zu/%zu bytes (%.1f%%), estimated iterations: %ld\n",
+            shared_mem, smpbo, 100.0 * shared_mem / smpbo, (long)estimated_iterations);
+        
         if (shared_mem > smpbo * 0.9) {
             GGML_LOG_INFO("  ⚠️  Optimization: Shared memory usage (%zu bytes) is >90%% of limit (%zu bytes)\n",
                 shared_mem, smpbo);
@@ -3903,6 +3909,16 @@ void mul_mat_q_case(ggml_backend_cuda_context & ctx, const mmq_args & args, cuda
         if (mmq_x_best == 0) {
             GGML_LOG_INFO("  ⚠️  Warning: No valid mmq_x found! This may indicate shared memory constraints.\n");
         }
+        if (estimated_iterations > 100) {
+            GGML_LOG_INFO("  ⚠️  Optimization: High iteration count (%ld), consider larger mmq_x if shared memory allows\n",
+                (long)estimated_iterations);
+        }
+        // Log lookup table optimization status for gfx906
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+        if (type == GGML_TYPE_MXFP4 || type == GGML_TYPE_IQ4_NL || type == GGML_TYPE_IQ4_XS) {
+            GGML_LOG_INFO("  ✓ Lookup table optimization: Using shared memory for kvalues_* (gfx906)\n");
+        }
+#endif
     }
 
     switch (mmq_x_best) {
