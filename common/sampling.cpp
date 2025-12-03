@@ -384,12 +384,13 @@ void common_perf_print(const struct llama_context * ctx, const struct common_sam
 }
 
 llama_token common_sampler_sample(struct common_sampler * gsmpl, struct llama_context * ctx, int idx, bool grammar_first) {
-    llama_synchronize(ctx);
-
-    // start measuring sampling time after the llama_context synchronization in order to not measure any ongoing async operations
-    const auto tm = gsmpl->tm();
-
+    // Synchronization happens lazily inside set_logits() -> llama_get_logits_ith()
+    // This allows decode and sampling to overlap, reducing latency
     gsmpl->set_logits(ctx, idx);
+
+    // start measuring sampling time after logits are available (sync happens inside set_logits)
+    // in order to not measure any ongoing async operations
+    const auto tm = gsmpl->tm();
 
     auto & grmr  = gsmpl->grmr;
     auto & chain = gsmpl->chain;
