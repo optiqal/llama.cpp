@@ -2613,13 +2613,27 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
                     if (kernel_timings.count(name) == 0 || kernel_memory_ops.count(name) == 0) continue;
                     const double avg_time_us = kernel_timings[name] / count;
                     const double avg_mem_ops = (double)kernel_memory_ops[name] / count;
+                    
                     // Estimate memory-bound time (assuming 10% cache miss rate)
+                    // Note: This is a rough estimate - actual kernel execution time is much longer than dispatch overhead
+                    // The dispatch overhead (avg_time_us) is just CPU-side overhead, not actual kernel execution time
+                    // For accurate analysis, use 'rocprof' to measure actual kernel execution time
                     const double estimated_mem_latency_us = (avg_mem_ops * hbm2_latency_ns * 0.1) / 1000.0;
-                    const double mem_latency_ratio = (avg_time_us > 0) ? estimated_mem_latency_us / avg_time_us : 0.0;
-                    if (mem_latency_ratio > 0.3) {
-                        fprintf(stderr, "  ⚠️  %s: Memory latency may be bottleneck (%.1f%% of dispatch time)\n",
-                            name.c_str(), mem_latency_ratio * 100.0);
-                        fprintf(stderr, "      Consider: Prefetching (GGML_HIP_PREFETCH_ENABLE=1), cache optimization\n");
+                    
+                    // Calculate memory operations per microsecond (throughput metric)
+                    // Higher values indicate more memory operations per unit time
+                    const double mem_ops_per_us = (avg_time_us > 0) ? avg_mem_ops / avg_time_us : 0.0;
+                    
+                    // Estimate if memory-bound: if we have many memory ops relative to dispatch time,
+                    // the kernel is likely memory-bound (but dispatch time is not kernel execution time)
+                    // For reference: typical kernels execute in milliseconds, dispatch is microseconds
+                    if (mem_ops_per_us > 1000000.0) { // >1M ops/us indicates high memory throughput
+                        fprintf(stderr, "  ℹ️  %s: High memory throughput (%.0f ops/us), likely memory-bound\n",
+                            name.c_str(), mem_ops_per_us);
+                        fprintf(stderr, "      Estimated memory latency (10%% miss): ~%.1f ms per call\n",
+                            estimated_mem_latency_us / 1000.0);
+                        fprintf(stderr, "      Note: Dispatch overhead (%.2f us) << kernel execution time (use rocprof for accurate timing)\n",
+                            avg_time_us);
                     }
                 }
                 fprintf(stderr, "  Note: Use 'rocprof' for accurate kernel execution timing\n");

@@ -156,10 +156,12 @@
 **Goal:** Optimize HBM2 memory access patterns and cache utilization
 
 **Tasks:**
-1. ⚠️  HBM2-aware prefetching: INVESTIGATING - Previous implementation caused regression
-   - Added controlled prefetching via GGML_HIP_PREFETCH_ENABLE=1 (experimental)
-   - Added HBM2-specific profiling to identify bottlenecks
-   - Investigating prefetch distance and timing for ~300-400 cycle HBM2 latency
+1. ❌ HBM2-aware prefetching: **DISABLED** - Volatile load approach causes 16% regression
+   - Previous implementation (__builtin_prefetch): -2.1% regression
+   - Current implementation (volatile load): -16.1% regression ⚠️
+   - Root cause: Volatile load blocks execution even when data is cached
+   - **Recommendation**: Use software pipelining or compiler hints instead of explicit prefetching
+   - Added HBM2-specific profiling to identify bottlenecks (see HBM2_PREFETCHING_INVESTIGATION.md)
 2. ✅ Optimize shared memory bank conflict patterns for 32-bank architecture
 3. ✅ Add memory access pattern telemetry
 4. ✅ Profile and optimize cache hierarchy usage

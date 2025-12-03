@@ -123,16 +123,21 @@ GGML_HIP_PREFETCH_ENABLE=1 GGML_HIP_LOG_PERFORMANCE=1 llama-bench -m model.gguf
 | Configuration | pp512 (tokens/s) | tg128 (tokens/s) | Change |
 |---------------|------------------|-------------------|--------|
 | **Without Prefetch** | 652.58 ± 23.78 | 73.96 ± 0.08 | Baseline |
-| **With Prefetch** | 638.69 ± 18.84 | 71.40 ± 0.07 | **-2.1% / -3.5%** |
+| **With Prefetch (v1)** | 638.69 ± 18.84 | 71.40 ± 0.07 | **-2.1% / -3.5%** |
+| **With Prefetch (v2 - constant memory)** | 547.52 ± 24.23 | 72.37 ± 0.10 | **-16.1% / -2.1%** ⚠️ |
 
 **Analysis:**
-- Prefetching causes **~2-3% regression** in both prompt processing and token generation
-- The volatile load overhead exceeds the benefit of hiding HBM2 latency
-- Possible causes:
-  1. **Cache Pollution**: Prefetched data evicts useful cache lines
-  2. **Load Overhead**: Volatile load blocks execution even when data is cached
-  3. **Wrong Prefetch Distance**: 1 iteration ahead may not be enough for ~300-400 cycle latency
-  4. **Memory Conflicts**: Prefetching interferes with actual memory access patterns
+- Prefetching causes **significant regression** (16.1% on pp512, 2.1% on tg128)
+- The volatile load overhead significantly exceeds any benefit from hiding HBM2 latency
+- **Root Causes Identified:**
+  1. **Volatile Load Overhead**: The `volatile` load blocks execution even when data is already cached
+  2. **Cache Pollution**: Prefetched data evicts useful cache lines that are needed sooner
+  3. **Wrong Prefetch Distance**: 1 iteration ahead (nrows*nwarps) may not be optimal for ~300-400 cycle latency
+  4. **Memory Conflicts**: Prefetching interferes with actual memory access patterns, causing stalls
+  5. **Constant Memory Check Overhead**: Checking `g_prefetch_enabled_device` adds overhead even when disabled
+  6. **Too Many Prefetch Calls**: Multiple prefetch calls per iteration (2 per iteration in Q8_0) compound overhead
+
+**Key Finding**: The volatile load approach is fundamentally flawed for HBM2 prefetching. Even with the early return check, the overhead of the volatile load when enabled is too high.
 
 **Monitor:**
 - Performance metrics (pp512, tg128)
