@@ -2389,7 +2389,7 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
         std::lock_guard<std::mutex> lock(stats_mutex);
         total_calls++;
         const int current_call = total_calls;
-        const bool should_log = (logged_calls < 100);
+        const bool should_log = (logged_calls < 50); // Reduced from 100 to 50 for less verbosity
         if (should_log) {
             logged_calls++;
         }
@@ -2599,8 +2599,14 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
                 const int64_t stride_C = ne0;  // stride for dst (row length in elements)
                 
                 if (log_performance) {
-                    fprintf(stderr, "gfx906 F32 kernel: Using custom mul_mat_f32_gfx906 (M=%d N=%d K=%d)\n", M, N, K);
-                    fflush(stderr);
+                    static int f32_kernel_log_count = 0;
+                    static std::mutex f32_kernel_log_mutex;
+                    std::lock_guard<std::mutex> lock(f32_kernel_log_mutex);
+                    f32_kernel_log_count++;
+                    if (f32_kernel_log_count <= 10) {
+                        fprintf(stderr, "gfx906 F32 kernel: Using custom mul_mat_f32_gfx906 (M=%d N=%d K=%d)\n", M, N, K);
+                        fflush(stderr);
+                    }
                 }
                 
                 mul_mat_f32_gfx906(ctx.stream(), A, B, C, M, N, K, stride_A, stride_B, stride_C);

@@ -3970,8 +3970,8 @@ void mul_mat_q_case(ggml_backend_cuda_context & ctx, const mmq_args & args, cuda
         }
     }
 
-    // Performance logging for MMQ kernel selection
-    if (log_performance && mmq_call_count++ < 50) {
+    // Performance logging for MMQ kernel selection (reduced verbosity)
+    if (log_performance && mmq_call_count++ < 20) {
         const size_t shared_mem = mmq_get_nbytes_shared<type>(mmq_x_best, mmq_y, cc, warp_size, nwarps);
         const char * type_str = ggml_type_name(type);
         const int64_t total_elements = args.ncols_max * args.nrows_x;
@@ -4000,18 +4000,23 @@ void mul_mat_q_case(ggml_backend_cuda_context & ctx, const mmq_args & args, cuda
         fprintf(stderr, "  Access pattern: %ld iterations, %ld elements/iteration\n",
             (long)estimated_iterations, (long)(args.ncols_max / estimated_iterations));
         
-        // Shared memory bank conflict analysis for 32-bank architecture
+        // Shared memory bank conflict analysis for 32-bank architecture (only log first 10 or when problematic)
+        static int bank_conflict_log_count = 0;
         const int64_t tile_x_elements = tile_x_size / sizeof(int);
         const int64_t tile_y_elements = tile_y_size / sizeof(int);
         const bool tile_x_bank_conflict_risk = (tile_x_elements % 32 == 0); // Stride-32 can cause conflicts
         const bool tile_y_bank_conflict_risk = (tile_y_elements % 32 == 0);
         if (tile_x_bank_conflict_risk || tile_y_bank_conflict_risk) {
-            fprintf(stderr, "  ⚠️  Bank conflict risk: tile_x stride=%ld, tile_y stride=%ld (32-bank architecture)\n",
-                (long)(tile_x_size / mmq_y), (long)(tile_y_size / mmq_x_best));
-        } else {
+            if (bank_conflict_log_count++ < 10) {
+                fprintf(stderr, "  ⚠️  Bank conflict risk: tile_x stride=%ld, tile_y stride=%ld (32-bank architecture)\n",
+                    (long)(tile_x_size / mmq_y), (long)(tile_y_size / mmq_x_best));
+                fflush(stderr);
+            }
+        } else if (bank_conflict_log_count++ < 5) {
+            // Only log low-risk status for first 5 calls
             fprintf(stderr, "  ✓ Bank conflicts: Low risk (padding avoids stride-32 conflicts)\n");
+            fflush(stderr);
         }
-        fflush(stderr);
 #endif
         
         if (shared_mem > smpbo * 0.9) {
