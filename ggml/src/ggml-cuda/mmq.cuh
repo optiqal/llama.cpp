@@ -3486,12 +3486,41 @@ static __device__ __forceinline__ void mul_mat_q_process_tile(
 
         {
             const int * by0 = y + ncols_y*(kb0*(qk*sizeof(block_q8_1_mmq) / (4*QK8_1*sizeof(int))) + 0*sizeof(block_q8_1_mmq)/sizeof(int));
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+            // Vectorized loads: Use int4 (16 bytes) for aligned memory access
+            // This generates v_load_dwordx4 instructions, reducing instruction count
+            // Strategy: Each thread loads 4 consecutive ints when possible, maintaining full parallelism
+            constexpr int elements_per_vec = 4; // int4 = 4 ints (16 bytes)
+            const int total_elements = mmq_x*MMQ_TILE_Y_K;
+            const int vec_elements = (total_elements / elements_per_vec) * elements_per_vec;
+            
+#pragma unroll
+            for (int l0 = 0; l0 < vec_elements; l0 += nwarps*warp_size * elements_per_vec) {
+                int l = l0 + (threadIdx.y*warp_size + threadIdx.x) * elements_per_vec;
+                
+                if (l + elements_per_vec <= vec_elements) {
+                    // Load 4 ints at once using vectorized load (v_load_dwordx4)
+                    // Compiler will generate buffer_load_dwordx4 instruction for aligned access
+                    const int4 * vec_ptr = (const int4 *)(by0 + l);
+                    int4 vec_data = *vec_ptr;
+                    // Store 4 ints to shared memory
+                    ((int4 *)(tile_y + l))[0] = vec_data;
+                }
+            }
+            // Handle remaining elements that aren't aligned to 4
+            if (vec_elements < total_elements) {
+                for (int l = vec_elements + threadIdx.y*warp_size + threadIdx.x; l < total_elements; l += nwarps*warp_size) {
+                    tile_y[l] = by0[l];
+                }
+            }
+#else
 #pragma unroll
             for (int l0 = 0; l0 < mmq_x*MMQ_TILE_Y_K; l0 += nwarps*warp_size) {
                 int l = l0 + threadIdx.y*warp_size + threadIdx.x;
 
                 tile_y[l] = by0[l];
             }
+#endif
         }
 
         __syncthreads();
@@ -3513,12 +3542,40 @@ static __device__ __forceinline__ void mul_mat_q_process_tile(
 
         {
             const int * by0 = y + ncols_y*(kb0*(qk*sizeof(block_q8_1_mmq) / (4*QK8_1*sizeof(int))) + 1*sizeof(block_q8_1_mmq)/sizeof(int));
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+            // Vectorized loads: Use int4 (16 bytes) for aligned memory access
+            // This generates v_load_dwordx4 instructions, reducing instruction count
+            // Strategy: Each thread loads 4 consecutive ints when possible, maintaining full parallelism
+            constexpr int elements_per_vec = 4; // int4 = 4 ints (16 bytes)
+            const int total_elements = mmq_x*MMQ_TILE_Y_K;
+            const int vec_elements = (total_elements / elements_per_vec) * elements_per_vec;
+            
+#pragma unroll
+            for (int l0 = 0; l0 < vec_elements; l0 += nwarps*warp_size * elements_per_vec) {
+                int l = l0 + (threadIdx.y*warp_size + threadIdx.x) * elements_per_vec;
+                
+                if (l + elements_per_vec <= vec_elements) {
+                    // Load 4 ints at once using vectorized load (v_load_dwordx4)
+                    const int4 * vec_ptr = (const int4 *)(by0 + l);
+                    int4 vec_data = *vec_ptr;
+                    // Store 4 ints to shared memory
+                    ((int4 *)(tile_y + l))[0] = vec_data;
+                }
+            }
+            // Handle remaining elements that aren't aligned to 4
+            if (vec_elements < total_elements) {
+                for (int l = vec_elements + threadIdx.y*warp_size + threadIdx.x; l < total_elements; l += nwarps*warp_size) {
+                    tile_y[l] = by0[l];
+                }
+            }
+#else
 #pragma unroll
             for (int l0 = 0; l0 < mmq_x*MMQ_TILE_Y_K; l0 += nwarps*warp_size) {
                 int l = l0 + threadIdx.y*warp_size + threadIdx.x;
 
                 tile_y[l] = by0[l];
             }
+#endif
         }
 
         __syncthreads();
