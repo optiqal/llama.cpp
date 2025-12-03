@@ -715,6 +715,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     float * x_df = (float *) (x_qs + txs.qs);
 #endif // defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+    // Load kvalues_mxfp4 lookup table into shared memory for gfx906 optimization
+    // This reduces constant memory access latency and improves throughput for MXFP4 models
+    __shared__ int8_t kvalues_mxfp4_shmem[16];
+    if (threadIdx.x < 16) {
+        kvalues_mxfp4_shmem[threadIdx.x] = kvalues_mxfp4[threadIdx.x];
+    }
+    __syncthreads();
+    const int8_t * kvalues_table = kvalues_mxfp4_shmem;
+#else
+    const int8_t * kvalues_table = kvalues_mxfp4;
+#endif // defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+
     constexpr int threads_per_row = MMQ_ITER_K / (4 * QR_MXFP4);
     constexpr int nrows = warp_size / threads_per_row;
     const int txi = warp_size > threads_per_row ? threadIdx.x % threads_per_row : threadIdx.x;
@@ -732,7 +745,7 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
         const block_mxfp4 * bxi = (const block_mxfp4 *) x + kbx0 + i*stride + kbx;
 
         const int aux_q4 = get_int_b1(bxi->qs, kqsx);
-        const int2 v = get_int_from_table_16(aux_q4, kvalues_mxfp4);
+        const int2 v = get_int_from_table_16(aux_q4, kvalues_table);
         const int k0 = kbx * (2 * QI_MXFP4) + kqsx;
 
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
@@ -2489,6 +2502,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     float * x_df = (float *) (x_qs + txs.qs);
 #endif // defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+    // Load kvalues_iq4nl lookup table into shared memory for gfx906 optimization
+    // This reduces constant memory access latency and improves throughput for IQ4_NL models
+    __shared__ int8_t kvalues_iq4nl_shmem[16];
+    if (threadIdx.x < 16) {
+        kvalues_iq4nl_shmem[threadIdx.x] = kvalues_iq4nl[threadIdx.x];
+    }
+    __syncthreads();
+    const int8_t * kvalues_table = kvalues_iq4nl_shmem;
+#else
+    const int8_t * kvalues_table = kvalues_iq4nl;
+#endif // defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+
     constexpr int threads_per_row = MMQ_ITER_K / (4 * QR4_NL);
     constexpr int nrows = warp_size / threads_per_row;
     const int txi = warp_size > threads_per_row ? threadIdx.x % threads_per_row : threadIdx.x;
@@ -2506,7 +2532,7 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
         const block_iq4_nl * bxi = (const block_iq4_nl *) x + kbx0 + i*stride + kbx;
 
         const int aux_q4 = get_int_b2(bxi->qs, kqsx);
-        const int2 v = get_int_from_table_16(aux_q4, kvalues_iq4nl);
+        const int2 v = get_int_from_table_16(aux_q4, kvalues_table);
         const int k0 = kbx * (2 * QI4_NL) + kqsx;
 
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
@@ -2929,6 +2955,19 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
     float * x_df = (float *) (x_qs + txs.qs);
 #endif // defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
 
+#if defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+    // Load kvalues_iq4nl lookup table into shared memory for gfx906 optimization
+    // This reduces constant memory access latency and improves throughput for IQ4_XS models
+    __shared__ int8_t kvalues_iq4nl_shmem[16];
+    if (threadIdx.x < 16) {
+        kvalues_iq4nl_shmem[threadIdx.x] = kvalues_iq4nl[threadIdx.x];
+    }
+    __syncthreads();
+    const int8_t * kvalues_table = kvalues_iq4nl_shmem;
+#else
+    const int8_t * kvalues_table = kvalues_iq4nl;
+#endif // defined(GGML_USE_HIP) && defined(GGML_HIP_GFX906_OPTIMIZE)
+
     constexpr int threads_per_row = MMQ_ITER_K / (4 * QR4_XS);
     constexpr int nrows = warp_size / threads_per_row;
     const int kqsx = threadIdx.x % threads_per_row;
@@ -2944,7 +2983,7 @@ template <int mmq_y, bool need_check> static __device__ __forceinline__ void loa
         const block_iq4_xs * bxi = (const block_iq4_xs *) x + kbx0 + i*stride;
 
         const int aux_q4 = get_int_b4(bxi->qs, kqsx);
-        const int2 v = get_int_from_table_16(aux_q4, kvalues_iq4nl);
+        const int2 v = get_int_from_table_16(aux_q4, kvalues_table);
         const int k0 = 8 * (kqsx / 4) + kqsx % 4;
 
 #if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
