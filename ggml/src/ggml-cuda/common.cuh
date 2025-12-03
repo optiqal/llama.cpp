@@ -556,13 +556,69 @@ static __device__ __forceinline__ int ggml_cuda_dp4a(const int a, const int b, i
 #endif // defined(GGML_USE_HIP)
 }
 
+// gfx906-specific: v_fmac_f32 instruction support
+#if defined(GGML_USE_HIP) && defined(__gfx906__)
+#define V_FMAC_F32_AVAILABLE
+#endif // defined(GGML_USE_HIP) && defined(__gfx906__)
+
+// gfx906-specific: v_dot8_i32_i4 instruction support
+#if defined(GGML_USE_HIP) && defined(__gfx906__)
+#define V_DOT8_I32_I4_AVAILABLE
+#endif // defined(GGML_USE_HIP) && defined(__gfx906__)
+
+// Wrapper for v_dot8_i32_i4 instruction on gfx906
+// Computes dot product of 8 i4 values: vdst = vdst + dot(src0:i4x8, src1:i4x8)
+// Note: Both operands must be packed as i4x8 (8 4-bit signed integers in one int32)
+static __device__ __forceinline__ int ggml_cuda_dot8_i4(const int a_i4x8, const int b_i4x8, int c) {
+#ifdef V_DOT8_I32_I4_AVAILABLE
+    // v_dot8_i32_i4 vdst, src0:i4x8, src1:i4x8, src2:i32 clamp
+    // Both a_i4x8 and b_i4x8 should contain 8 4-bit signed integers packed in int32
+    asm volatile("v_dot8_i32_i4 %0, %1, %2, %0" : "+v"(c) : "v"(a_i4x8), "v"(b_i4x8));
+    return c;
+#else
+    // Fallback: unpack and compute manually
+    // This is not optimal but provides correctness for non-gfx906 architectures
+    const int8_t * a8 = (const int8_t *) &a_i4x8;
+    const int8_t * b8 = (const int8_t *) &b_i4x8;
+    // Extract 4-bit values (sign-extended)
+    int8_t a4[8], b4[8];
+    for (int i = 0; i < 4; ++i) {
+        a4[2*i+0] = (a8[i] >> 0) & 0x0F;
+        a4[2*i+1] = (a8[i] >> 4) & 0x0F;
+        b4[2*i+0] = (b8[i] >> 0) & 0x0F;
+        b4[2*i+1] = (b8[i] >> 4) & 0x0F;
+        // Sign extend from 4-bit to 8-bit
+        if (a4[2*i+0] & 0x08) a4[2*i+0] |= 0xF0;
+        if (a4[2*i+1] & 0x08) a4[2*i+1] |= 0xF0;
+        if (b4[2*i+0] & 0x08) b4[2*i+0] |= 0xF0;
+        if (b4[2*i+1] & 0x08) b4[2*i+1] |= 0xF0;
+    }
+    for (int i = 0; i < 8; ++i) {
+        c += a4[i] * b4[i];
+    }
+    return c;
+#endif // V_DOT8_I32_I4_AVAILABLE
+}
+
 static __device__ __forceinline__ void ggml_cuda_mad(float & acc, const float v, const float u) {
+#ifdef V_FMAC_F32_AVAILABLE
+    // Use v_fmac_f32 instruction on gfx906: vdst = vdst + src0 * src1
+    // This provides better instruction scheduling and potentially lower latency
+    asm volatile("v_fmac_f32 %0, %1, %2" : "+v"(acc) : "v"(v), "v"(u));
+#else
     acc += v*u;
+#endif // V_FMAC_F32_AVAILABLE
 }
 
 static __device__ __forceinline__ void ggml_cuda_mad(float & acc, const float2 v, const float2 u) {
+#ifdef V_FMAC_F32_AVAILABLE
+    // Use two v_fmac_f32 instructions for float2 operations on gfx906
+    asm volatile("v_fmac_f32 %0, %1, %2" : "+v"(acc) : "v"(v.x), "v"(u.x));
+    asm volatile("v_fmac_f32 %0, %1, %2" : "+v"(acc) : "v"(v.y), "v"(u.y));
+#else
     acc += v.x*u.x;
     acc += v.y*u.y;
+#endif // V_FMAC_F32_AVAILABLE
 }
 
 #if defined(GGML_USE_HIP) && (defined(RDNA2) || defined(RDNA3) || defined(RDNA4) || defined(__gfx906__) || defined(CDNA))

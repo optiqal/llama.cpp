@@ -268,6 +268,8 @@ static ggml_cuda_device_info ggml_cuda_init() {
             GGML_LOG_INFO("    gfx906 (Vega20/MI50/Radeon VII) optimizations: enabled\n");
             GGML_LOG_INFO("      - dp4a support: yes (via __builtin_amdgcn_sdot4)\n");
             GGML_LOG_INFO("      - V_DOT2_F32_F16: yes\n");
+            GGML_LOG_INFO("      - V_FMAC_F32: yes (optimized float FMA operations)\n");
+            GGML_LOG_INFO("      - V_DOT8_I32_I4: yes (wrapper available)\n");
             GGML_LOG_INFO("      - MMQ heuristics: optimized for MXFP4 and Q8_0 prompt processing\n");
 #ifdef GGML_HIP_GFX906_OPTIMIZE
             GGML_LOG_INFO("      - gfx906-specific compiler optimizations: enabled\n");
