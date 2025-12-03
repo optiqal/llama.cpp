@@ -228,6 +228,10 @@ template <int vdr> static __device__ __forceinline__ float vec_dot_q5_1_q8_1_imp
 #define VDR_Q8_0_Q8_1_MMVQ 2
 #define VDR_Q8_0_Q8_1_MMQ 8
 
+// Q8_0 dot product implementation optimized for gfx906 (Vega20/MI50/Radeon VII)
+// On gfx906, ggml_cuda_dp4a uses __builtin_amdgcn_sdot4 which provides efficient
+// 8-bit dot product accumulation. The unrolled loop maximizes instruction-level
+// parallelism and register reuse for prompt processing workloads.
 template <typename T, int vdr> static __device__ __forceinline__ T vec_dot_q8_0_q8_1_impl(
     const int * v, const int * u, const T & d8_0, const T & d8_1) {
 
@@ -236,6 +240,8 @@ template <typename T, int vdr> static __device__ __forceinline__ T vec_dot_q8_0_
 #pragma unroll
     for (int i = 0; i < vdr; ++i) {
         // SIMD dot product of quantized values
+        // On gfx906: Uses __builtin_amdgcn_sdot4 via ggml_cuda_dp4a
+        // This instruction efficiently computes dot products of 4 int8 values
         sumi = ggml_cuda_dp4a(v[i], u[i], sumi);
     }
 
@@ -292,6 +298,12 @@ template <int vdr> static __device__ __forceinline__ float vec_dot_q8_0_16_q8_1_
 #define VDR_MXFP4_Q8_1_MMVQ 2
 #define VDR_MXFP4_Q8_1_MMQ  4
 
+// MXFP4 dot product implementation optimized for gfx906 (Vega20/MI50/Radeon VII)
+// MXFP4 uses a lookup table (get_int_from_table_16) which on HIP/gfx906 leverages
+// __builtin_amdgcn_perm for efficient byte-level permutations. The dp4a calls
+// then efficiently accumulate the dot products using gfx906's sdot4 instruction.
+// This combination is particularly effective for prompt processing where memory
+// access patterns can be optimized for gfx906's cache hierarchy.
 static __device__ __forceinline__ float vec_dot_mxfp4_q8_1(
     const void * __restrict__ vbq, const block_q8_1 * __restrict__ bq8_1, const int & kbx, const int & iqs) {
 
@@ -303,8 +315,10 @@ static __device__ __forceinline__ float vec_dot_mxfp4_q8_1(
 #pragma unroll
     for (int l = 0; l < VDR_MXFP4_Q8_1_MMVQ; ++l) {
         const int aux_q4 = get_int_b1(bq4->qs, iqs + l);
+        // On gfx906: get_int_from_table_16 uses __builtin_amdgcn_perm for efficient lookups
         const int2 v = get_int_from_table_16(aux_q4, kvalues_mxfp4);
 
+        // On gfx906: Uses __builtin_amdgcn_sdot4 via ggml_cuda_dp4a
         sumi = ggml_cuda_dp4a(v.x, q8[l + 0], sumi);
         sumi = ggml_cuda_dp4a(v.y, q8[l + 4], sumi);
     }

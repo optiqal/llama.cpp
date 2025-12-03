@@ -236,6 +236,18 @@ void ggml_cuda_op_mul_mat_q(
     GGML_UNUSED_VARS(src1, dst, src1_ddf_i, src1_padded_row_size);
 }
 
+// Environment variable for debug logging of MMQ selection (gfx906-specific)
+static bool ggml_cuda_mmq_debug_log() {
+    static bool initialized = false;
+    static bool enabled = false;
+    if (!initialized) {
+        const char * env = getenv("GGML_CUDA_MMQ_DEBUG");
+        enabled = (env != nullptr && (strcmp(env, "1") == 0 || strcasecmp(env, "true") == 0));
+        initialized = true;
+    }
+    return enabled;
+}
+
 bool ggml_cuda_should_use_mmq(enum ggml_type type, int cc, int64_t ne11) {
 #ifdef GGML_CUDA_FORCE_CUBLAS
     return false;
@@ -315,16 +327,70 @@ bool ggml_cuda_should_use_mmq(enum ggml_type type, int cc, int64_t ne11) {
     // gfx906 (Vega20/MI50/Radeon VII) supports dp4a, so allow MMQ usage more broadly
     // Similar to RDNA2 which also has dp4a support
     if (cc >= GGML_CUDA_CC_VEGA20 && cc < GGML_CUDA_CC_CDNA1) {
+        bool use_mmq = false;
+        const char * reason = nullptr;
+        
         // For Vega20 with dp4a, use MMQ for smaller batch sizes or specific quant types
+        // Q4/Q5 types benefit significantly from MMQ on gfx906
         if (ne11 <= 128 || type == GGML_TYPE_Q4_0 || type == GGML_TYPE_Q4_1 || 
             type == GGML_TYPE_Q5_0 || type == GGML_TYPE_Q5_1) {
-            return true;
+            use_mmq = true;
+            reason = "ne11 <= 128 or Q4/Q5 type";
+        } else if (ne11 <= 256 && (type == GGML_TYPE_Q4_K || type == GGML_TYPE_Q5_K)) {
+            use_mmq = true;
+            reason = "ne11 <= 256 and Q4_K/Q5_K";
+        } else if (type == GGML_TYPE_MXFP4) {
+            // MXFP4: Use MMQ for prompt processing (larger ne11) up to 512 tokens
+            // Beyond that, rocBLAS may be more efficient for very large contexts
+            if (ne11 <= 512) {
+                use_mmq = true;
+                reason = "MXFP4 and ne11 <= 512";
+            } else if (ne11 <= 1024) {
+                use_mmq = true;
+                reason = "MXFP4 and ne11 <= 1024 (large prompt)";
+            } else {
+                use_mmq = false;
+                reason = "MXFP4 and ne11 > 1024 (fallback to rocBLAS)";
+            }
+        } else if (type == GGML_TYPE_Q8_0) {
+            // Q8_0: Similar to MXFP4, but can handle even larger batches efficiently
+            // Q8_0 uses 8-bit quantization which pairs well with dp4a on gfx906
+            if (ne11 <= 512) {
+                use_mmq = true;
+                reason = "Q8_0 and ne11 <= 512";
+            } else if (ne11 <= 2048) {
+                use_mmq = true;
+                reason = "Q8_0 and ne11 <= 2048 (large prompt)";
+            } else {
+                use_mmq = false;
+                reason = "Q8_0 and ne11 > 2048 (fallback to rocBLAS)";
+            }
+        } else {
+            // For larger batches with other quant types, fall back to rocBLAS unless batch is small
+            use_mmq = ne11 < MMQ_DP4A_MAX_BATCH_SIZE;
+            reason = use_mmq ? "ne11 < MMQ_DP4A_MAX_BATCH_SIZE" : "ne11 >= MMQ_DP4A_MAX_BATCH_SIZE (fallback to rocBLAS)";
         }
-        if (ne11 <= 256 && (type == GGML_TYPE_Q4_K || type == GGML_TYPE_Q5_K)) {
-            return true;
+        
+        // Debug logging for gfx906 MMQ selection
+        if (ggml_cuda_mmq_debug_log()) {
+            // Use a simple switch to avoid dependency on ggml_type_name
+            const char * type_str = "unknown";
+            switch (type) {
+                case GGML_TYPE_Q8_0: type_str = "Q8_0"; break;
+                case GGML_TYPE_MXFP4: type_str = "MXFP4"; break;
+                case GGML_TYPE_Q4_0: type_str = "Q4_0"; break;
+                case GGML_TYPE_Q4_1: type_str = "Q4_1"; break;
+                case GGML_TYPE_Q5_0: type_str = "Q5_0"; break;
+                case GGML_TYPE_Q5_1: type_str = "Q5_1"; break;
+                case GGML_TYPE_Q4_K: type_str = "Q4_K"; break;
+                case GGML_TYPE_Q5_K: type_str = "Q5_K"; break;
+                default: break;
+            }
+            GGML_LOG_DEBUG("gfx906 MMQ decision: type=%s ne11=%ld -> %s (%s)\n", 
+                          type_str, (long)ne11, use_mmq ? "MMQ" : "rocBLAS", reason);
         }
-        // For larger batches, fall back to rocBLAS unless batch is small
-        return ne11 < MMQ_DP4A_MAX_BATCH_SIZE;
+        
+        return use_mmq;
     }
 
     return (!GGML_CUDA_CC_IS_RDNA3(cc) && !GGML_CUDA_CC_IS_CDNA(cc)) || ne11 < MMQ_DP4A_MAX_BATCH_SIZE;

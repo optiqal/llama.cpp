@@ -262,6 +262,19 @@ static ggml_cuda_device_info ggml_cuda_init() {
         GGML_LOG_INFO("  Device %d: %s, %s (0x%x), VMM: %s, Wave Size: %d\n",
                       id, prop.name, prop.gcnArchName, info.devices[id].cc & 0xffff,
                       device_vmm ? "yes" : "no", prop.warpSize);
+        
+        // Log gfx906-specific features and optimizations
+        if (info.devices[id].cc >= GGML_CUDA_CC_VEGA20 && info.devices[id].cc < GGML_CUDA_CC_CDNA1) {
+            GGML_LOG_INFO("    gfx906 (Vega20/MI50/Radeon VII) optimizations: enabled\n");
+            GGML_LOG_INFO("      - dp4a support: yes (via __builtin_amdgcn_sdot4)\n");
+            GGML_LOG_INFO("      - V_DOT2_F32_F16: yes\n");
+            GGML_LOG_INFO("      - MMQ heuristics: optimized for MXFP4 and Q8_0 prompt processing\n");
+#ifdef GGML_HIP_GFX906_OPTIMIZE
+            GGML_LOG_INFO("      - gfx906-specific compiler optimizations: enabled\n");
+#else
+            GGML_LOG_INFO("      - gfx906-specific compiler optimizations: disabled (set GGML_HIP_GFX906_OPTIMIZE=ON)\n");
+#endif
+        }
 #elif defined(GGML_USE_MUSA)
         // FIXME: Ensure compatibility with varying warp sizes across different MUSA archs.
         info.devices[id].warp_size = 32;

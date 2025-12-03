@@ -264,10 +264,15 @@ static int mmq_get_nwarps_host(const int /*cc*/, const int warp_size) {
 }
 #endif // (GGML_USE_HIP)
 
+// Get number of warps per block for MMQ kernels
+// For gfx906 (wave-64): returns 256/64 = 4 warps per block, which is optimal for GCN architecture
+// This ensures proper occupancy and memory coalescing for prompt processing workloads
 static constexpr __device__ int mmq_get_nwarps_device() {
 #if defined(AMD_MFMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
     return 8;
 #else
+    // For gfx906 and other GCN architectures: 256/64 = 4 warps per block
+    // This provides good balance between occupancy and register pressure
     return 256/ggml_cuda_get_physical_warp_size();
 #endif // AMD_MFMA_AVAILABLE
 }

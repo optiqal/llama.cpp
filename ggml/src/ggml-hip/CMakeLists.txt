@@ -52,6 +52,55 @@ message(STATUS "HIP and hipBLAS found")
 # Workaround old compilers
 set(CMAKE_HIP_FLAGS "${CMAKE_HIP_FLAGS} --gpu-max-threads-per-block=1024")
 
+# Detect if gfx906 is in the target architectures
+set(HAS_GFX906 FALSE)
+if(CMAKE_HIP_ARCHITECTURES)
+    foreach(arch ${CMAKE_HIP_ARCHITECTURES})
+        if(arch MATCHES "gfx906")
+            set(HAS_GFX906 TRUE)
+            break()
+        endif()
+    endforeach()
+elseif(GPU_TARGETS)
+    foreach(arch ${GPU_TARGETS})
+        if(arch MATCHES "gfx906")
+            set(HAS_GFX906 TRUE)
+            break()
+        endif()
+    endforeach()
+endif()
+
+# Option to enable gfx906-specific optimizations
+option(GGML_HIP_GFX906_OPTIMIZE "Enable gfx906 (Vega20/MI50/Radeon VII) specific optimizations" ${HAS_GFX906})
+
+if(GGML_HIP_GFX906_OPTIMIZE)
+    message(STATUS "gfx906-specific optimizations enabled")
+    
+    # gfx906-specific optimization flags for HIP
+    # -O3: Maximum optimization
+    # -ffast-math: Fast math operations (safe for LLM inference, preserves NaN/Inf handling)
+    # -mllvm -amdgpu-early-inline-all=true: Enable early inlining for better register usage
+    # -mllvm -amdgpu-function-calls=false: Disable function calls in kernels for better performance
+    # -mllvm -amdgpu-waves-per-eu=4: Optimize for wavefront scheduling (gfx906 has 4 CUs per SE)
+    
+    set(GFX906_HIP_FLAGS "-O3 -ffast-math")
+    
+    # Additional LLVM optimizations for gfx906
+    # These can be tuned based on profiling results
+    option(GGML_HIP_GFX906_AGGRESSIVE_OPT "Enable aggressive gfx906 optimizations (may increase compile time)" OFF)
+    if(GGML_HIP_GFX906_AGGRESSIVE_OPT)
+        set(GFX906_HIP_FLAGS "${GFX906_HIP_FLAGS} -mllvm -amdgpu-early-inline-all=true")
+        message(STATUS "Aggressive gfx906 optimizations enabled")
+    endif()
+    
+    # Add gfx906-specific flags to CMAKE_HIP_FLAGS
+    # Note: These flags apply to all HIP compilations when gfx906 is targeted
+    set(CMAKE_HIP_FLAGS "${CMAKE_HIP_FLAGS} ${GFX906_HIP_FLAGS}")
+    
+    # Add compile definition to enable gfx906-specific code paths
+    add_compile_definitions(GGML_HIP_GFX906_OPTIMIZE)
+endif()
+
 file(GLOB   GGML_HEADERS_ROCM "../ggml-cuda/*.cuh")
 list(APPEND GGML_HEADERS_ROCM "../../include/ggml-cuda.h")
 
