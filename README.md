@@ -58,6 +58,24 @@ llama-server -hf ggml-org/gemma-3-1b-it-GGUF
 The main goal of `llama.cpp` is to enable LLM inference with minimal setup and state-of-the-art performance on a wide
 range of hardware - locally and in the cloud.
 
+### GPU Optimization Focus
+
+This fork focuses on optimizing `llama.cpp` for specific GPU architectures to maximize inference performance. 
+
+**Current Status:**
+- **gfx906 (Vega20/MI50/Radeon VII)**: Actively optimizing
+  - ✅ Phase 1 Complete: Custom F32 attention kernels using `V_FMAC_F32` (~43% improvement on attention operations)
+  - ✅ Phase 2.1 Complete: HBM2-aware prefetching in MMQ kernels
+  - 🔄 Phase 2.2 In Progress: Shared memory bank conflict optimization
+  - 📋 Phase 2.3-2.4 Planned: Memory access telemetry and cache optimization
+  - 📋 Phase 3 Planned: Multi-GPU pipeline parallelism
+  - 📋 Phase 4 Planned: Advanced quantization optimizations
+
+**Next Target:**
+- **T4 (Turing)**: Planned for next optimization cycle
+
+For general documentation, usage instructions, and feature information, please refer to the [main llama.cpp repository](https://github.com/ggml-org/llama.cpp) and its [documentation](https://github.com/ggml-org/llama.cpp/tree/master/docs).
+
 - Plain C/C++ implementation without any dependencies
 - Apple silicon is a first-class citizen - optimized via ARM NEON, Accelerate and Metal frameworks
 - AVX, AVX2, AVX512 and AMX support for x86 architectures
