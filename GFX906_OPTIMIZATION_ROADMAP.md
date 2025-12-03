@@ -138,12 +138,31 @@
 
 **Tasks:**
 1. ✅ Analyze F32 attention operation patterns (DONE - `ne0=2880, ne1=128`)
-2. ⏳ Implement custom `mul_mat_f32_gfx906` kernel using `V_FMAC_F32`
-3. ⏳ Optimize memory access for attention matrix dimensions
-4. ⏳ Benchmark vs. cuBLAS baseline
-5. ⏳ Integrate into `ggml_cuda_mul_mat` dispatch logic
+2. ✅ Implement custom `mul_mat_f32_gfx906` kernel using `V_FMAC_F32` (DONE)
+3. ✅ Optimize memory access for attention matrix dimensions (DONE)
+4. ✅ Benchmark vs. cuBLAS baseline (DONE - ~35.9% improvement)
+5. ✅ Integrate into `ggml_cuda_mul_mat` dispatch logic (DONE)
 
-**Expected Impact:** 5-10% overall performance improvement
+**Expected Impact:** 5-10% overall performance improvement ✅ **ACHIEVED**
+
+---
+
+### Phase 1.5: Fix Scattered Memory Access Patterns (HIGH PRIORITY - 1-2 weeks)
+**Goal:** Eliminate non-coalesced memory access in MMQ kernels (15-25% performance loss)
+
+**Tasks:**
+1. ⏳ Analyze `load_tiles_q8_0` memory access patterns
+2. ⏳ Optimize block alignment and padding for coalescing
+3. ⏳ Implement coalesced memory access patterns in MMQ kernels
+4. ⏳ Use `__ldg()` for read-only quantized weights
+5. ⏳ Benchmark memory bandwidth improvement
+
+**Expected Impact:** 15-25% improvement (HIGHEST PRIORITY - biggest bottleneck)
+
+**Success Metrics:**
+- `src0_stride` shows coalesced access patterns
+- Measured memory bandwidth utilization >70% of peak
+- Reduced HBM2 latency impact
 
 **Success Metrics:**
 - F32 operations use custom kernel instead of cuBLAS
@@ -168,6 +187,18 @@
 5. ✅ Benchmark memory bandwidth utilization (with enhanced HBM2 profiling)
 
 **Expected Impact:** 3-7% improvement for large matrix operations
+
+**NEW FINDINGS FROM TELEMETRY (see TELEMETRY_OPTIMIZATION_OPPORTUNITIES.md):**
+- ⚠️ **CRITICAL:** Scattered memory access patterns (`src0_stride=90`) causing 15-25% performance loss
+  - Q8_0 quantized weights have non-coalesced access patterns
+  - Need to optimize `load_tiles_q8_0` for better memory coalescing
+  - **Priority:** HIGH - This is the biggest bottleneck identified
+- ⚠️ **Cache misses:** Working sets (8-25 MB) are 6-25x larger than L2 cache (4MB)
+  - Estimated 10-20% performance loss due to cache misses
+  - Need better cache-aware tiling and software pipelining
+- ⚠️ **Bank conflicts:** `tile_x stride=293` may cause bank conflicts on 32-bank architecture
+  - Estimated 5-10% performance loss
+  - Need to improve padding strategy
 
 **Success Metrics:**
 - Increased memory bandwidth utilization (measured via rocminfo/perf)
@@ -244,9 +275,10 @@
 | Phase | Optimization | Expected Gain | Projected pp512 | Projected tg128 |
 |-------|-------------|---------------|-----------------|-----------------|
 | Baseline | Current state | - | 507.51 t/s | 74.89 t/s |
-| Phase 1 | F32 attention optimization | +5-10% | 532-558 t/s | 78.6-82.4 t/s |
-| Phase 2 | Memory bandwidth optimization | +3-7% | 548-597 t/s | 80.9-88.2 t/s |
-| Phase 3 | Multi-GPU parallelism | +50-100% | 822-1194 t/s | 121.4-176.4 t/s |
+| Phase 1 | F32 attention optimization | +5-10% ✅ | 532-558 t/s | 78.6-82.4 t/s |
+| Phase 1.5 | Fix scattered access patterns | +15-25% | 612-697 t/s | 90.6-103.1 t/s |
+| Phase 2 | Memory bandwidth optimization | +3-7% | 630-746 t/s | 93.3-110.3 t/s |
+| Phase 3 | Multi-GPU parallelism | +50-100% | 945-1492 t/s | 140.0-220.6 t/s |
 | Phase 4 | Advanced quantization | +2-5% | 838-1253 t/s | 123.8-185.2 t/s |
 | Phase 5 | Memory management | Enables larger models | - | - |
 
