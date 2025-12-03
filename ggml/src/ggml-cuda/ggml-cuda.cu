@@ -60,6 +60,7 @@
 #include <array>
 #include <atomic>
 #include <charconv>
+#include <chrono>
 #include <cinttypes>
 #include <condition_variable>
 #include <cstddef>
@@ -3660,6 +3661,15 @@ static void evaluate_and_capture_cuda_graph(ggml_backend_cuda_context * cuda_ctx
                 cuda_ctx->cuda_graph->graph = nullptr;
             }
 
+#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+            static const bool profile_hip_graphs = (getenv("GGML_HIP_PROFILE_GRAPHS") != nullptr);
+            if (profile_hip_graphs) {
+                auto capture_end = std::chrono::high_resolution_clock::now();
+                double capture_time_ms = std::chrono::duration<double, std::milli>(capture_end - cuda_ctx->cuda_graph->capture_start_time).count();
+                GGML_LOG_DEBUG("%s: HIP graph capture took %.3f ms\n", __func__, capture_time_ms);
+            }
+#endif
+
             CUDA_CHECK(cudaStreamEndCapture(cuda_ctx->stream(), &cuda_ctx->cuda_graph->graph));
             graph_evaluated_or_captured = true; // CUDA graph has been captured
 
@@ -3674,13 +3684,46 @@ static void evaluate_and_capture_cuda_graph(ggml_backend_cuda_context * cuda_ctx
 
     if (use_cuda_graph) {
         if (cuda_ctx->cuda_graph->instance == nullptr) { // Create executable graph from captured graph.
+#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+            static const bool profile_hip_graphs = (getenv("GGML_HIP_PROFILE_GRAPHS") != nullptr);
+            auto instantiate_start = profile_hip_graphs ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
+#endif
             CUDA_CHECK(cudaGraphInstantiate(&cuda_ctx->cuda_graph->instance, cuda_ctx->cuda_graph->graph, NULL, NULL, 0));
+#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+            if (profile_hip_graphs) {
+                auto instantiate_end = std::chrono::high_resolution_clock::now();
+                double instantiate_time_ms = std::chrono::duration<double, std::milli>(instantiate_end - instantiate_start).count();
+                GGML_LOG_DEBUG("%s: HIP graph instantiation took %.3f ms\n", __func__, instantiate_time_ms);
+            }
+#endif
         }
         if (cuda_graph_update_required) { // Update graph executable
+#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+            static const bool profile_hip_graphs = (getenv("GGML_HIP_PROFILE_GRAPHS") != nullptr);
+            auto update_start = profile_hip_graphs ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
+#endif
             update_cuda_graph_executable(cuda_ctx);
+#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+            if (profile_hip_graphs) {
+                auto update_end = std::chrono::high_resolution_clock::now();
+                double update_time_ms = std::chrono::duration<double, std::milli>(update_end - update_start).count();
+                GGML_LOG_DEBUG("%s: HIP graph update took %.3f ms\n", __func__, update_time_ms);
+            }
+#endif
         }
         // Launch graph
+#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+        static const bool profile_hip_graphs = (getenv("GGML_HIP_PROFILE_GRAPHS") != nullptr);
+        auto launch_start = profile_hip_graphs ? std::chrono::high_resolution_clock::now() : std::chrono::high_resolution_clock::time_point();
+#endif
         CUDA_CHECK(cudaGraphLaunch(cuda_ctx->cuda_graph->instance, cuda_ctx->stream()));
+#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+        if (profile_hip_graphs) {
+            auto launch_end = std::chrono::high_resolution_clock::now();
+            double launch_time_ms = std::chrono::duration<double, std::milli>(launch_end - launch_start).count();
+            GGML_LOG_DEBUG("%s: HIP graph launch took %.3f ms\n", __func__, launch_time_ms);
+        }
+#endif
 #else
         graph_evaluated_or_captured = true;
 #endif  // USE_CUDA_GRAPH
@@ -3767,6 +3810,13 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
             std::lock_guard<std::mutex> lock(ggml_cuda_lock);
             ggml_cuda_lock_counter.fetch_add(1, std::memory_order_relaxed);
         }
+
+#if defined(GGML_USE_HIP) && !defined(NDEBUG)
+        static const bool profile_hip_graphs = (getenv("GGML_HIP_PROFILE_GRAPHS") != nullptr);
+        if (profile_hip_graphs) {
+            cuda_ctx->cuda_graph->capture_start_time = std::chrono::high_resolution_clock::now();
+        }
+#endif
 
         CUDA_CHECK(cudaStreamBeginCapture(cuda_ctx->stream(), cudaStreamCaptureModeRelaxed));
     }

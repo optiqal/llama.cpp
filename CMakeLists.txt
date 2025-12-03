@@ -121,6 +121,10 @@ if (NOT DEFINED GGML_CUDA_GRAPHS)
     set(GGML_CUDA_GRAPHS_DEFAULT ON)
 endif()
 
+if (NOT DEFINED GGML_HIP_GRAPHS)
+    set(GGML_HIP_GRAPHS_DEFAULT ON)
+endif()
+
 # transition helpers
 function (llama_option_depr TYPE OLD NEW)
     if (${OLD})

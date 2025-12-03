@@ -111,6 +111,10 @@ if (NOT GGML_CUDA_GRAPHS_DEFAULT)
     set(GGML_CUDA_GRAPHS_DEFAULT OFF)
 endif()
 
+if (NOT GGML_HIP_GRAPHS_DEFAULT)
+    set(GGML_HIP_GRAPHS_DEFAULT OFF)
+endif()
+
 # general
 option(GGML_STATIC "ggml: static link libraries"                     OFF)
 option(GGML_NATIVE "ggml: optimize the build for the current system" ${GGML_NATIVE_DEFAULT})
@@ -208,7 +212,7 @@ set   (GGML_CUDA_COMPRESSION_MODE "size" CACHE STRING
 set_property(CACHE GGML_CUDA_COMPRESSION_MODE PROPERTY STRINGS "none;speed;balance;size")
 
 option(GGML_HIP                             "ggml: use HIP"                                   OFF)
-option(GGML_HIP_GRAPHS                      "ggml: use HIP graph, experimental, slow"         OFF)
+option(GGML_HIP_GRAPHS                      "ggml: use HIP graphs (llama.cpp only)"            ${GGML_HIP_GRAPHS_DEFAULT})
 option(GGML_HIP_NO_VMM                      "ggml: do not try to use HIP VMM"                 ON)
 option(GGML_HIP_ROCWMMA_FATTN               "ggml: enable rocWMMA for FlashAttention"         OFF)
 option(GGML_HIP_MMQ_MFMA                    "ggml: enable MFMA MMA for CDNA in MMQ"           ON)
